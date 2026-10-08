@@ -1,0 +1,9 @@
+{
+  "name": "Pronoia",
+  "short_name": "Pronoia",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F4EFE3",
+  "theme_color": "#A8BFA0",
+  "icons": [{ "src": "pebble-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
