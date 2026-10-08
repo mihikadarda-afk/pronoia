@@ -1,6 +1,6 @@
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { PebbleSays } from '../../components/Pebble';
-import { Avatar, TopBar, useToast } from '../../components/ui';
+import { Avatar, ConfirmButton, TopBar, useToast } from '../../components/ui';
 import { deviceService } from '../../services/deviceService';
 import { useAppState } from '../../services/useApp';
 import type { Person } from '../../services/types';
@@ -70,17 +70,16 @@ export function Family() {
               <span className="block small" style={{ fontWeight: 700 }}>{roleLabel(p)}</span>
             </div>
             {!p.isOwner && (
-              <button
+              <ConfirmButton
                 className="btn btn--ghost btn--small"
-                onClick={() => {
-                  if (confirm(`Remove ${p.name} from the circle?`)) {
-                    deviceService.removePerson(p.id);
-                    toast(`${p.name} removed`);
-                  }
+                confirmLabel="Tap to confirm"
+                onConfirm={() => {
+                  deviceService.removePerson(p.id);
+                  toast(`${p.name} removed`);
                 }}
               >
                 Remove
-              </button>
+              </ConfirmButton>
             )}
           </div>
           <p className="small muted" style={{ margin: '8px 0 0' }}>

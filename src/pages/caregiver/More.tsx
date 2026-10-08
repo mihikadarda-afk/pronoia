@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Pebble } from '../../components/Pebble';
-import { Avatar, TopBar, useToast } from '../../components/ui';
+import { Avatar, ConfirmButton, TopBar, useToast } from '../../components/ui';
 import { useSession } from '../../lib/session';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
@@ -48,18 +48,17 @@ export function More() {
         <button className="btn btn--ghost btn--block" onClick={() => { session.signOut(); nav('/'); }}>
           Sign out
         </button>
-        <button
+        <ConfirmButton
           className="link-btn"
           style={{ width: '100%' }}
-          onClick={() => {
-            if (confirm('Reset all demo data?')) {
-              deviceService.resetDemo();
-              toast('Demo data reset');
-            }
+          confirmLabel="Tap again to reset all demo data"
+          onConfirm={() => {
+            deviceService.resetDemo();
+            toast('Demo data reset');
           }}
         >
           Reset demo data
-        </button>
+        </ConfirmButton>
       </div>
     </main>
   );

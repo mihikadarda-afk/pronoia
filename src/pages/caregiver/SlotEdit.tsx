@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
-import { PillIcon, Toggle, TopBar, readImage, useToast } from '../../components/ui';
+import { ConfirmButton, PillIcon, Toggle, TopBar, readImage, useToast } from '../../components/ui';
 import { cityShort, fmtTime, hhmmLabel, instantFor } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
@@ -154,17 +154,16 @@ export function SlotEdit() {
         <button className="btn btn--block" onClick={save} disabled={!draft.name.trim() || draft.times.length === 0}>
           Save slot {slot}
         </button>
-        <button
+        <ConfirmButton
           className="btn btn--ghost btn--block"
-          onClick={() => {
-            if (confirm(`Remove ${draft.name} from slot ${slot}?`)) {
-              deviceService.removeMedicine(slot);
-              nav('/care/meds');
-            }
+          confirmLabel={`Tap again to remove ${draft.name}`}
+          onConfirm={() => {
+            deviceService.removeMedicine(slot);
+            nav('/care/meds');
           }}
         >
           Remove medicine from this slot
-        </button>
+        </ConfirmButton>
       </div>
     </main>
   );

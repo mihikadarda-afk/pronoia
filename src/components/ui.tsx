@@ -1,3 +1,4 @@
+import type React from 'react';
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import type { DoseStatus, Medicine, Person, PillShape, SlotHealth } from '../services/types';
@@ -205,4 +206,31 @@ export function readImage(file: File): Promise<string> {
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+}
+
+/** A button that asks for a second tap instead of a browser confirm dialog. */
+export function ConfirmButton({
+  className,
+  style,
+  confirmLabel,
+  onConfirm,
+  children,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+  confirmLabel: string;
+  onConfirm: () => void;
+  children: ReactNode;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <button
+      className={className}
+      style={style}
+      onClick={() => (armed ? (setArmed(false), onConfirm()) : setArmed(true))}
+      onBlur={() => setArmed(false)}
+    >
+      {armed ? confirmLabel : children}
+    </button>
+  );
 }
