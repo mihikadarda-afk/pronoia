@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Pebble } from '../../components/Pebble';
 import { Avatar, ConfirmButton, TopBar, useToast } from '../../components/ui';
 import { useSession } from '../../lib/session';
-import { deviceService } from '../../services/deviceService';
+import { deviceService, isDemo } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 
 const links = [
@@ -41,6 +41,13 @@ export function More() {
           <span aria-hidden>›</span>
         </Link>
       ))}
+      {!isDemo && (
+        <button className="btn btn--ghost btn--block" style={{ marginTop: 12 }} onClick={() => { deviceService.signOut(); nav('/'); }}>
+          Sign out
+        </button>
+      )}
+      {isDemo && (
+      <>
       <h2 className="section-title">Demo</h2>
       <div className="stack">
         <button className="btn btn--soft btn--block" onClick={() => { session.signIn('parent', { parentLinked: true }); nav('/parent'); }}>
@@ -61,6 +68,8 @@ export function More() {
           Reset demo data
         </ConfirmButton>
       </div>
+      </>
+      )}
     </main>
   );
 }

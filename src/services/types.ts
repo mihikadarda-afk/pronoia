@@ -25,7 +25,7 @@ export interface Person {
   city: string;
   timeZone: string;
   photo?: string; // data URL or undefined for an initial avatar
-  status: 'active' | 'pending';
+  status: 'active' | 'pending' | 'invited';
   isOwner?: boolean;
   appAccess: boolean; // refillers get WhatsApp only
   joinedAt?: number;

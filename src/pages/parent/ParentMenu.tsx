@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { LANGS, langName, useT } from '../../lib/i18n';
 import { useSession } from '../../lib/session';
+import { ConfirmButton } from '../../components/ui';
+import { deviceService, isDemo } from '../../services/deviceService';
 
 export function ParentMenu() {
   const t = useT();
@@ -23,16 +25,30 @@ export function ParentMenu() {
       <button className="btn btn--huge" onClick={() => nav('/parent')}>
         {t.back}
       </button>
-      <button
-        className="link-btn"
-        style={{ width: '100%', fontSize: 18 }}
-        onClick={() => {
-          session.signOut();
-          nav('/');
-        }}
-      >
-        {t.signOut}
-      </button>
+      {isDemo ? (
+        <button
+          className="link-btn"
+          style={{ width: '100%', fontSize: 18 }}
+          onClick={() => {
+            session.signOut();
+            nav('/');
+          }}
+        >
+          {t.signOut}
+        </button>
+      ) : (
+        <ConfirmButton
+          className="link-btn"
+          style={{ width: '100%', fontSize: 18 }}
+          confirmLabel={t.unlinkConfirm}
+          onConfirm={() => {
+            deviceService.signOut();
+            nav('/');
+          }}
+        >
+          {t.unlink}
+        </ConfirmButton>
+      )}
     </main>
   );
 }

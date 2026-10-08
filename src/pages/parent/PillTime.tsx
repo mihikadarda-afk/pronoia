@@ -4,7 +4,7 @@ import { PebbleSays } from '../../components/Pebble';
 import { Placeholder, PillIcon } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { hhmmLabel } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
+import { deviceService, isDemo } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 
 export function PillTime() {
@@ -18,8 +18,14 @@ export function PillTime() {
 
   // When pill time arrives the dispenser drops the pill into the cup.
   useEffect(() => {
-    if (dose && dose.status === 'upcoming') deviceService.simulateDispense(dose.slot, dose.time);
+    if (isDemo && dose && dose.status === 'upcoming') deviceService.simulateDispense(dose.slot, dose.time);
   }, [dose]);
+
+  // Live: the dispenser reports the swallow, and this screen celebrates on its own.
+  const finished = dose?.status === 'taken' || dose?.status === 'late';
+  useEffect(() => {
+    if (!isDemo && finished) setPhase('done');
+  }, [finished]);
 
   if (!dose) {
     return (
@@ -63,16 +69,24 @@ export function PillTime() {
         </div>
       </div>
       <p style={{ fontSize: 22, fontWeight: 700, textAlign: 'center' }}>{t.liftFromCup}</p>
-      <button
-        className="btn btn--huge"
-        onClick={() => {
-          deviceService.simulatePickupAndSwallow(dose.id);
-          setPhase('done');
-        }}
-      >
-        ✓ {t.iTookIt}
-      </button>
-      <Placeholder>Demo: on the real dispenser the weight sensor and camera notice this on their own.</Placeholder>
+      {isDemo ? (
+        <>
+          <button
+            className="btn btn--huge"
+            onClick={() => {
+              deviceService.simulatePickupAndSwallow(dose.id);
+              setPhase('done');
+            }}
+          >
+            ✓ {t.iTookIt}
+          </button>
+          <Placeholder>Demo: on the real dispenser the weight sensor and camera notice this on their own.</Placeholder>
+        </>
+      ) : (
+        <button className="btn btn--huge btn--ghost" onClick={() => nav('/parent')}>
+          {t.back}
+        </button>
+      )}
     </main>
   );
 }

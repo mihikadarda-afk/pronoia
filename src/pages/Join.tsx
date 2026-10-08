@@ -4,11 +4,13 @@ import { Pebble, PebbleSays } from '../components/Pebble';
 import { Avatar, Placeholder } from '../components/ui';
 import { LANGS, langName, useT } from '../lib/i18n';
 import { useSession } from '../lib/session';
-import { deviceService, normalizeCode } from '../services/deviceService';
+import { EmailCodeForm } from '../components/EmailCodeForm';
+import { deviceService, isDemo, normalizeCode } from '../services/deviceService';
+import { useAuth } from '../services/useApp';
 import type { Person, Role } from '../services/types';
 import { PrivacyPromise } from './parent/ParentPrivacy';
 
-type Step = 'role' | 'code' | 'confirm' | 'privacy' | 'done';
+type Step = 'role' | 'code' | 'confirm' | 'email' | 'privacy' | 'done';
 
 /** The code-linking flow, used on the parent's phone (and by refillers and extra caregivers). */
 export function Join() {
@@ -24,19 +26,36 @@ export function Join() {
   const [caregiver, setCaregiver] = useState<Person | null>(null);
   const [scanning, setScanning] = useState(false);
 
-  const check = (value = code) => {
-    const res = deviceService.checkCode(value);
-    if (!res.ok) {
-      setError(res.reason);
-      return;
+  const [busy, setBusy] = useState(false);
+  const auth = useAuth();
+
+  const check = async (value = code) => {
+    setBusy(true);
+    try {
+      const res = await deviceService.checkCode(value);
+      if (!res.ok) {
+        setError(res.reason);
+        return;
+      }
+      setError('');
+      setCaregiver(res.caregiver);
+      setStep('confirm');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
     }
-    setError('');
-    setCaregiver(res.caregiver);
-    setStep('confirm');
   };
 
-  const connect = () => {
-    const res = deviceService.joinWithCode(code, role, name.trim());
+  const connect = async () => {
+    // A caregiver joining for real needs an email account first.
+    if (!isDemo && role === 'caregiver' && (auth.status === 'signed-out' || auth.isAnonymous)) {
+      setStep('email');
+      return;
+    }
+    setBusy(true);
+    const res = await deviceService.joinWithCode(code, role, name.trim());
+    setBusy(false);
     if (!res.ok) {
       setError(res.reason ?? 'Something went wrong.');
       setStep('code');
@@ -55,7 +74,7 @@ export function Join() {
     if (step === 'role') nav('/');
     else if (step === 'code') setStep('role');
     else if (step === 'confirm') setStep('code');
-    else if (step === 'privacy') setStep('confirm');
+    else if (step === 'privacy' || step === 'email') setStep('confirm');
     else nav('/');
   };
 
@@ -143,12 +162,14 @@ export function Join() {
             </div>
           ) : (
             <>
-              <button className="btn btn--huge" disabled={code.length < 7 || (role !== 'parent' && !name.trim())} onClick={() => check()}>
+              <button className="btn btn--huge" disabled={busy || code.length < 7 || (role !== 'parent' && !name.trim())} onClick={() => check()}>
                 {t.next}
               </button>
-              <button className="btn btn--huge btn--ghost" style={{ fontSize: 20 }} onClick={() => setScanning(true)}>
-                {t.scanQr}
-              </button>
+              {isDemo && (
+                <button className="btn btn--huge btn--ghost" style={{ fontSize: 20 }} onClick={() => setScanning(true)}>
+                  {t.scanQr}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -170,6 +191,17 @@ export function Join() {
           <button className="btn btn--huge btn--ghost" onClick={() => setStep('code')}>
             {t.notThem}
           </button>
+        </div>
+      )}
+
+      {step === 'email' && caregiver && (
+        <div className="stack" style={{ fontSize: 16 }}>
+          <PebbleSays mood="happy" size={90}>
+            Caregivers sign in with email, so you can get alerts and review clips.
+          </PebbleSays>
+          <div className="card">
+            <EmailCodeForm cta="Send me a code" onDone={() => setStep('confirm')} />
+          </div>
         </div>
       )}
 
@@ -197,7 +229,7 @@ export function Join() {
           <button className="btn btn--huge" onClick={() => nav('/')}>
             {t.continue}
           </button>
-          <Placeholder>Demo: sign in as the caregiver to approve this request on the Family screen.</Placeholder>
+          {isDemo && <Placeholder>Demo: sign in as the caregiver to approve this request on the Family screen.</Placeholder>}
         </div>
       )}
     </main>

@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { CreateCircle } from './CreateCircle';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { PebbleSays, type PebbleMood } from '../../components/Pebble';
 import { Avatar, Placeholder, readImage } from '../../components/ui';
 import { useSession } from '../../lib/session';
 import { cityShort, fmtTime } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
-import { useAppState, usePeople } from '../../services/useApp';
+import { deviceService, isDemo } from '../../services/deviceService';
+import { useAppState, useAuth, usePeople } from '../../services/useApp';
 
 const ZONES = ['Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London'];
 const STEPS = ['welcome', 'parent', 'zones', 'whatsapp', 'code', 'device', 'done'] as const;
@@ -24,6 +25,13 @@ export function Onboarding() {
   const next = () => setStep(STEPS[Math.min(i + 1, STEPS.length - 1)]);
   const prev = () => (i === 0 ? nav('/') : setStep(STEPS[i - 1]));
   const now = deviceService.now();
+  const auth = useAuth();
+
+  if (!isDemo) {
+    if (auth.status === 'signed-out') return <Navigate to="/" replace />;
+    if (auth.status === 'no-circle') return <CreateCircle onCreated={() => setStep('parent')} />;
+    if (auth.status !== 'ready') return null;
+  }
 
   const say: Record<Step, [PebbleMood, ReactNode]> = {
     welcome: ['waving', "Hi! I'm Pebble. I'll help you look after your parent's pills from far away."],
@@ -160,10 +168,14 @@ export function Onboarding() {
               />
             </label>
             {deviceErr && <p className="error-text small">{deviceErr}</p>}
+{isDemo && (
+              <>
             <button className="btn btn--ghost btn--block" onClick={() => setDeviceCode(s.device.deviceCode)}>
               📷 Scan the code (demo fills it in)
             </button>
             <Placeholder>Camera scanning is mocked.</Placeholder>
+              </>
+            )}
           </div>
         )}
 
@@ -180,8 +192,8 @@ export function Onboarding() {
         {step === 'device' ? (
           <button
             className="btn btn--block"
-            onClick={() => {
-              const r = deviceService.pairDevice(deviceCode);
+            onClick={async () => {
+              const r = await deviceService.pairDevice(deviceCode);
               if (r.ok) next();
               else setDeviceErr(r.reason ?? '');
             }}
@@ -204,7 +216,7 @@ export function Onboarding() {
           </button>
         )}
       </div>
-      <Placeholder>Demo: the form starts filled in with the sample family.</Placeholder>
+      {isDemo && <Placeholder>Demo: the form starts filled in with the sample family.</Placeholder>}
     </main>
   );
 }

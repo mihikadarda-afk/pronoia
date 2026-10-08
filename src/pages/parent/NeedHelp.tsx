@@ -12,6 +12,8 @@ export function NeedHelp() {
   const t = useT();
   const nav = useNavigate();
   const [sentTo, setSentTo] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const helpers = s.people
     .filter((p) => p.status === 'active' && (p.role === 'caregiver' || p.role === 'refiller'))
     .map((p) => p.name);
@@ -42,13 +44,24 @@ export function NeedHelp() {
       <button
         className="btn btn--huge btn--blush"
         style={{ minHeight: 100, fontSize: 28 }}
-        onClick={() => setSentTo(deviceService.parentHelp())}
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            setSentTo(await deviceService.parentHelp());
+          } catch {
+            setFailed(true);
+          } finally {
+            setBusy(false);
+          }
+        }}
       >
         🆘 {t.helpSend}
       </button>
       <button className="btn btn--huge btn--ghost" onClick={() => nav('/parent')}>
         {t.back}
       </button>
+      {failed && <p className="error-text center" style={{ fontSize: 20 }}>{t.helpFailed}</p>}
       <p className="center" style={{ fontSize: 20, fontWeight: 700 }}>{t.helpEmergency}</p>
     </main>
   );

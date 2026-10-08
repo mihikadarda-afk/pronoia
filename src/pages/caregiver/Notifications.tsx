@@ -92,8 +92,8 @@ export function Notifications() {
         <button
           className="btn btn--soft btn--block"
           style={{ marginTop: 8 }}
-          onClick={() => {
-            const sent = deviceService.sendTestNotification();
+          onClick={async () => {
+            const sent = await deviceService.sendTestNotification();
             toast(`Test sent by ${sent.map((c) => CHANNELS.find((x) => x.id === c)!.label).join(', ')} (mock)`);
           }}
         >

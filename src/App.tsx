@@ -1,6 +1,12 @@
+import { useEffect } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
-import { BottomNav, ToastProvider } from './components/ui';
+import { BottomNav, ToastProvider, useToast } from './components/ui';
+import { Pebble, PebbleSays } from './components/Pebble';
+import { LiveSignIn } from './pages/LiveSignIn';
+import { RefillerHome } from './pages/RefillerHome';
+import { deviceService, isDemo } from './services/deviceService';
+import type { Role } from './services/types';
 import { SignIn } from './pages/SignIn';
 import { Join } from './pages/Join';
 import { Onboarding } from './pages/caregiver/Onboarding';
@@ -24,11 +30,51 @@ import { ParentPrivacy } from './pages/parent/ParentPrivacy';
 import { ParentMenu } from './pages/parent/ParentMenu';
 import { ParentWaiting } from './pages/parent/ParentWaiting';
 import { NeedHelp } from './pages/parent/NeedHelp';
-import { useAppState } from './services/useApp';
+import { useAppState, useAuth } from './services/useApp';
+
+/** The signed-in role: picked on the demo screen, or read from the circle when live. */
+function useRole(): Role | null {
+  const session = useSession();
+  const auth = useAuth();
+  if (isDemo) return session.role;
+  return auth.status === 'ready' || auth.status === 'pending' ? (auth.role ?? null) : null;
+}
+
+function Splash() {
+  return (
+    <main className="screen screen--plain">
+      <div className="hero-wrap" style={{ paddingTop: 120 }}>
+        <Pebble mood="sleepy" size={130} />
+        <p className="muted" style={{ fontWeight: 800 }}>Waking up…</p>
+      </div>
+    </main>
+  );
+}
+
+/** Errors from background saves show up as a toast. */
+function ErrorToasts() {
+  const toast = useToast();
+  useEffect(() => deviceService.onError((m) => toast(`Couldn't save: ${m}`)), [toast]);
+  return null;
+}
 
 function CaregiverLayout() {
-  const { role } = useSession();
+  const role = useRole();
+  const auth = useAuth();
+  if (!isDemo && auth.status === 'loading') return <Splash />;
   if (role !== 'caregiver') return <Navigate to="/" replace />;
+  if (!isDemo && auth.status === 'pending') {
+    return (
+      <main className="screen screen--plain">
+        <div className="hero-wrap" style={{ paddingTop: 80 }}>
+          <PebbleSays mood="sleepy" size={140} align="stack">
+            Waiting for {auth.caregiverName ?? 'the circle owner'} to approve you. Nothing is shared until then.
+          </PebbleSays>
+          <button className="link-btn" onClick={() => deviceService.signOut()}>Sign out</button>
+        </div>
+      </main>
+    );
+  }
   return (
     <>
       <Outlet />
@@ -38,18 +84,29 @@ function CaregiverLayout() {
 }
 
 function ParentLayout() {
-  const { role, parentLinked, lang } = useSession();
+  const { parentLinked, lang } = useSession();
+  const role = useRole();
+  const auth = useAuth();
   const s = useAppState();
+  if (!isDemo && auth.status === 'loading') return <Splash />;
   if (role !== 'parent') return <Navigate to="/" replace />;
-  if (!parentLinked) return <Navigate to="/join" replace />;
+  if (isDemo && !parentLinked) return <Navigate to="/join" replace />;
   const parent = s.people.find((p) => p.id === s.parentId);
-  return <div lang={lang}>{parent?.status === 'pending' ? <ParentWaiting /> : <Outlet />}</div>;
+  const waiting = isDemo ? parent?.status === 'pending' : auth.status === 'pending';
+  return <div lang={lang}>{waiting ? <ParentWaiting /> : <Outlet />}</div>;
 }
 
 function Home() {
-  const { role } = useSession();
+  const role = useRole();
+  const auth = useAuth();
+  if (!isDemo) {
+    if (auth.status === 'loading') return <Splash />;
+    if (auth.status === 'signed-out') return <LiveSignIn />;
+    if (auth.status === 'no-circle') return <Navigate to="/setup" replace />;
+  }
   if (role === 'caregiver') return <Navigate to="/care" replace />;
   if (role === 'parent') return <Navigate to="/parent" replace />;
+  if (role === 'refiller') return <RefillerHome />;
   return <SignIn />;
 }
 
@@ -57,6 +114,7 @@ export function App() {
   return (
     <SessionProvider>
       <ToastProvider>
+        <ErrorToasts />
         <HashRouter>
           <div className="app">
             <Routes>

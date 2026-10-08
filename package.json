@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:backend": "node --test tests/*.test.mjs",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -19,6 +23,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "supabase": "^2.120.0",
     "typescript": "~5.6.3",
     "vite": "^5.4.11"
   }

@@ -24,6 +24,7 @@ function pebbleLine(doses: Dose[], s: AppState, parentName: string, quiet: boole
   const review = doses.find((d) => d.status === 'unconfirmed');
   const missed = doses.find((d) => d.status === 'missed');
   const taken = doses.filter((d) => d.status === 'taken' || d.status === 'late');
+  if (!s.device.paired) return { mood: 'waving', text: 'Pair the dispenser in More → Device and I\'ll start tracking doses.' };
   if (!s.device.online) return { mood: 'sleepy', text: "The dispenser is offline. I'll let you know as soon as it's back." };
   if (missed) return { mood: 'worried', text: `${parentName} missed the ${hhmmLabel(missed.time)} ${missed.medicine.purpose.toLowerCase()} pill. A gentle call might help.` };
   if (review) {
@@ -88,9 +89,15 @@ export function Today() {
                 Pressed "I need help" {relTime(n.at, now.getTime())} ({fmtTime(new Date(n.at), parent.timeZone)} in {cityShort(parent.timeZone)}).
                 {refiller ? ` ${refiller.name} was told too.` : ''}
               </span>
-              <span className="block" style={{ marginTop: 6, fontWeight: 800, userSelect: 'all' }}>
-                Call {parent.name}: {parent.whatsapp}
-              </span>
+              {parent.whatsapp ? (
+                <span className="block" style={{ marginTop: 6, fontWeight: 800, userSelect: 'all' }}>
+                  Call {parent.name}: {parent.whatsapp}
+                </span>
+              ) : (
+                <Link to="/care/family" className="block small" style={{ marginTop: 6, fontWeight: 800 }}>
+                  No number saved for {parent.name}. Add it in Family.
+                </Link>
+              )}
             </div>
           </div>
           <button className="btn btn--block" style={{ marginTop: 12 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>

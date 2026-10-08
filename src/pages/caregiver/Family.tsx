@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { PebbleSays } from '../../components/Pebble';
 import { Avatar, ConfirmButton, TopBar, useToast } from '../../components/ui';
@@ -17,8 +18,9 @@ const sees: Record<Person['role'], string> = {
 export function Family() {
   const s = useAppState();
   const toast = useToast();
+  const [editing, setEditing] = useState<string | null>(null);
   const pending = s.people.filter((p) => p.status === 'pending');
-  const active = s.people.filter((p) => p.status === 'active');
+  const active = s.people.filter((p) => p.status === 'active' || p.status === 'invited');
 
   return (
     <main className="screen">
@@ -68,8 +70,14 @@ export function Family() {
               <strong>{p.name}</strong>
               <span className="small muted"> · {p.relation}</span>
               <span className="block small" style={{ fontWeight: 700 }}>{roleLabel(p)}</span>
+              {p.status === 'invited' && (
+                <span className="chip chip--unconfirmed" style={{ marginTop: 4 }}>
+                  <span className="chip-dot" />
+                  Phone not linked yet: share the code
+                </span>
+              )}
             </div>
-            {!p.isOwner && (
+            {!p.isOwner && p.status !== 'invited' && (
               <ConfirmButton
                 className="btn btn--ghost btn--small"
                 confirmLabel="Tap to confirm"
@@ -83,10 +91,50 @@ export function Family() {
             )}
           </div>
           <p className="small muted" style={{ margin: '8px 0 0' }}>
-            {sees[p.role]} {p.whatsapp && `WhatsApp ${p.whatsapp}.`}
+            {sees[p.role]} {p.whatsapp ? `WhatsApp ${p.whatsapp}.` : 'No WhatsApp number yet.'}
           </p>
+          {editing === p.id ? (
+            <PersonEditor person={p} onDone={() => setEditing(null)} />
+          ) : (
+            <button className="link-btn small" onClick={() => setEditing(p.id)}>
+              Edit details
+            </button>
+          )}
         </section>
       ))}
     </main>
+  );
+}
+
+function PersonEditor({ person, onDone }: { person: Person; onDone: () => void }) {
+  const [d, setD] = useState({ name: person.name, relation: person.relation, whatsapp: person.whatsapp, city: person.city });
+  const field = (k: keyof typeof d, label: string, type = 'text') => (
+    <label className="field">
+      <span>{label}</span>
+      <input id={`edit-${person.id}-${k}`} className="input" type={type} value={d[k]} onChange={(e) => setD({ ...d, [k]: e.target.value })} />
+    </label>
+  );
+  return (
+    <form
+      style={{ marginTop: 12 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        deviceService.updatePerson(person.id, d);
+        onDone();
+      }}
+    >
+      {field('name', 'Name')}
+      {field('relation', 'Relation')}
+      {field('whatsapp', 'WhatsApp number', 'tel')}
+      {field('city', 'City')}
+      <div className="btn-row">
+        <button type="button" className="btn btn--ghost" onClick={onDone}>
+          Cancel
+        </button>
+        <button className="btn" disabled={!d.name.trim()}>
+          Save
+        </button>
+      </div>
+    </form>
   );
 }

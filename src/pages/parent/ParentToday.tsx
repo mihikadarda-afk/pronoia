@@ -3,7 +3,7 @@ import { Pebble } from '../../components/Pebble';
 import { PillIcon } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { hhmmLabel } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
+import { deviceService, isDemo } from '../../services/deviceService';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 
 export function ParentToday() {
@@ -32,6 +32,11 @@ export function ParentToday() {
       {next ? (
         <section style={{ marginTop: 18 }}>
           <h2 style={{ fontSize: 22, marginBottom: 10 }}>{t.nextPill}</h2>
+          {inCup && !isDemo && (
+            <button className="btn btn--huge" style={{ marginBottom: 12 }} onClick={() => nav(`/parent/pill/${encodeURIComponent(inCup.id)}`)}>
+              {t.pillReady}
+            </button>
+          )}
           <div className="parent-pill-card">
             <PillIcon med={next.medicine} size={84} />
             <div>
@@ -94,7 +99,7 @@ export function ParentToday() {
         <button className="btn btn--huge btn--blush" onClick={() => nav('/parent/help')}>
           🆘 {t.needHelp}
         </button>
-        {next && (
+        {isDemo && next && (
           <button className="btn btn--huge btn--soft" style={{ fontSize: 20 }} onClick={() => nav(`/parent/pill/${encodeURIComponent(next.id)}`)}>
             {t.pillTimeDemo}
           </button>

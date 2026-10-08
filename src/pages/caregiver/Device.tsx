@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PebbleSays } from '../../components/Pebble';
 import { Placeholder, Toggle, TopBar, useToast } from '../../components/ui';
 import { fmtDate, relTime } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
+import { deviceService, isDemo } from '../../services/deviceService';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 
 function Signal({ dbm }: { dbm: number }) {
@@ -66,18 +66,18 @@ export function Device() {
             <strong>{d.firmware}</strong>
           </li>
         </ul>
-        <Toggle label="Simulate offline (demo)" checked={!d.online} onChange={(v) => deviceService.setDeviceOnline(!v)} />
+        {isDemo && <Toggle label="Simulate offline (demo)" checked={!d.online} onChange={(v) => deviceService.setDeviceOnline(!v)} />}
       </section>
 
-      <h2 className="section-title">Pair a dispenser</h2>
+      <h2 className="section-title">{d.paired ? 'Pair a different dispenser' : 'Pair a dispenser'}</h2>
       <section className="card">
         <p className="small" style={{ marginTop: 0 }}>The code is printed on the bottom of the dispenser.</p>
         <div className="row">
           <input className="input grow" placeholder="PRN-82QX-7M" value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setErr(''); }} aria-label="Device code" />
           <button
             className="btn"
-            onClick={() => {
-              const r = deviceService.pairDevice(code);
+            onClick={async () => {
+              const r = await deviceService.pairDevice(code);
               if (r.ok) { toast('Dispenser paired'); setCode(''); } else setErr(r.reason ?? '');
             }}
           >

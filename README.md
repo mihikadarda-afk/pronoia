@@ -4,62 +4,138 @@ A mobile-first companion app for the Pronoia smart pill dispenser. The dispenser
 
 The app has two sides that link with a family code:
 
-- **Caregiver** (e.g. Mihika in New York): today's doses in both time zones, dose detail with clip review, slots, refills, weekly summary, alerts, device and plan, privacy and family.
-- **Parent** (e.g. Nanaji in Ahmedabad): huge text, at most two buttons per screen, English, Hindi and Gujarati.
+- **Caregiver** (e.g. Mihika in New York): today's doses in both time zones, dose detail with clip review, slots, refills, weekly summary, alerts, notifications, device and plan, privacy and family.
+- **Parent** (e.g. Nanaji in Ahmedabad): huge text, today's pills, "Message my family", "I need help", in English, Hindi and Gujarati.
 
-**Pebble**, the capsule mascot, appears on every main screen in six moods: happy, waving, thinking, worried, sleepy and celebrating.
+**Pebble**, the capsule mascot, appears on every main screen in six moods.
 
-## Run it
+The app runs in one of two modes:
+
+- **Live**: real accounts and data in [Supabase](https://supabase.com), shared between everyone's phones, with the dispenser reporting over HTTPS. Used whenever `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
+- **Demo**: a sample family kept in the browser, with buttons to simulate the dispenser. Used when those variables aren't set, or with `?demo` in the URL.
+
+## What's real and what isn't yet
+
+| Part | Status |
+| --- | --- |
+| Caregiver sign-in (email + 6-digit code) | Real |
+| Parent and refill-helper sign-in (family code, no email needed) | Real (anonymous accounts) |
+| Family circle, codes that work once and expire in 24 h, caregiver approval | Real |
+| Who sees what (caregiver / parent / refill helper) | Real, enforced in the database |
+| Medicines, schedules, refills, alerts and notification settings | Real |
+| Live updates between phones | Real (Supabase Realtime) |
+| Dispenser API: heartbeat, dispensed, picked up, swallow result, slot status | Real |
+| Missed-dose detection | Real (runs every 5 minutes with pg_cron) |
+| ESP32 firmware | Written, not yet compiled or run on hardware. Motor, load cell, buzzer and camera are stubs to fill in |
+| WhatsApp, SMS, email, calls, push | **Queued, not sent.** Every alert lands in the `outbox` table with its channel and whether it may break quiet hours. A sender is the next stage |
+| Video clips and the AI swallow check | **Not yet.** The dispenser reports a confidence number; clip upload, playback and auto-deletion are the next stage |
+| Payments | **Not yet** |
+
+## Set up the live app
+
+### 1. Supabase project
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Push the database:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <your-project-ref>
+   npx supabase db push
+   ```
+   This creates the tables, row-level security, the server functions and the missed-dose job.
+3. In the dashboard:
+   - **Database → Extensions**: check that **pg_cron** is on. Then in **Integrations → Cron** you should see `pronoia-missed-doses`. If it's missing, enable pg_cron and run the last `do $$ ... $$` block of the migration again.
+   - **Authentication → Sign In / Providers**: keep **Email** on and turn on **Allow anonymous sign-ins** (parents and refill helpers join with a code, not an email). Consider turning on CAPTCHA, since anonymous sign-ins are open to anyone.
+   - **Authentication → Email Templates**: paste `supabase/templates/sign-in-code.html` into both **Magic Link** and **Confirm signup**, so the email shows the 6-digit code.
+   - **Authentication → SMTP Settings**: set up your own email sender. The built-in one only sends a few emails an hour.
+   - **Authentication → URL Configuration**: set **Site URL** to where you host the app.
+
+### 2. The app
 
 ```bash
+cp .env.example .env.local   # fill in the project URL and anon (publishable) key
 npm install
-npm run dev       # http://localhost:5173
-npm run build     # type-check and build to dist/
+npm run dev                  # http://localhost:5173
+npm run build                # static files in dist/
 ```
 
-The build is static with hash routing and a relative base path, so `dist/` can be hosted anywhere.
+Host `dist/` on any static host (Netlify, Vercel, Cloudflare Pages, GitHub Pages). It uses hash routing, so no server rewrites are needed.
 
-## Demo walkthrough
+### 3. Dispensers
 
-1. On the sign-in screen, pick **Caregiver** or **Parent** and continue. Both sides share the same mock data in this browser.
-2. **Caregiver → Today**: the 8:00 PM blood pressure dose was picked up but not confirmed. Tap it, then tap **Review clip** and choose **Looks good** or **Not taken**. The clip shows a countdown until it's deleted.
-3. **Week**: a 7-day grid with one missed dose (Tuesday), one late dose and tonight's unconfirmed dose.
-4. **More → Family**: approve Anika's pending request. Share or regenerate the family code (`PEB-4K7`), which works once and expires after 24 hours.
-5. **Join flow**: sign out, tap **I have a code** → **I'm the parent** → type `PEB-4K7`. Pebble asks "Is this Mihika?", shows the camera promise, then waits for the caregiver to approve.
-6. **Parent → Pill time (demo)**: the dispenser "drops" the 10 PM vitamin; tap **I took it** and Pebble celebrates.
-7. **More → Reset demo data** restores the starting state.
+Each dispenser gets a code (printed on its label) and a secret (flashed into the firmware). Only a hash of the secret is stored.
 
-The demo clock starts at 9:50 PM in India (12:20 PM in New York) each time the app loads, so every screen has something to show.
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/provision-device.mjs
+```
+
+The caregiver enters the code during setup or in **More → Device and plan**.
+
+**No hardware yet?** The simulator behaves like a dispenser:
+
+```bash
+export SUPABASE_URL=... SUPABASE_ANON_KEY=... DEVICE_CODE=PRN-XXXX-XX DEVICE_SECRET=...
+node scripts/simulate-dispenser.mjs run                 # gives every dose on time
+node scripts/simulate-dispenser.mjs dose 2 20:00 0.4    # one dose with an unsure swallow check
+node scripts/simulate-dispenser.mjs drop 3 22:00        # drop and leave it, to test missed doses
+node scripts/simulate-dispenser.mjs stuck 1             # report a jammed slot
+```
+
+**Firmware**: `firmware/pronoia-dispenser/` is an Arduino sketch for the ESP32 (needs ArduinoJson 7). Copy `config.example.h` to `config.h`, fill in WiFi, the Supabase URL and anon key, and the device code and secret. Fill in the functions marked `HARDWARE:` for your motor, load cell, buzzer and LED, and camera. Before shipping, replace `setInsecure()` with a pinned certificate.
+
+### Dispenser API
+
+The dispenser calls one function: `POST {SUPABASE_URL}/rest/v1/rpc/device_event` with header `apikey: <anon key>` and body `{"p_code": "...", "p_secret": "...", "p_event": {...}}`.
+
+| `type` | Fields | What happens |
+| --- | --- | --- |
+| `heartbeat` | `wifi_dbm`, `camera`, `firmware` | Marks the dispenser online. Returns the schedule, the parent's local date and time, and the reminder delay |
+| `dispensed` | `slot`, `time` ("HH:MM") | Starts the dose; one pill fewer in the slot |
+| `picked_up` | `slot`, `time` | "Picked up, not confirmed" |
+| `swallow` | `slot`, `time`, `confidence` (0–1), `clip_seconds` | Taken (≥ 0.8), late (more than 30 min after the dose time) or needs review (< 0.8) |
+| `slot_status` | `slot`, `pills_left?`, `stuck?` | Updates the count; alerts the caregiver if a slot is stuck or empty |
+
+Times are the parent's local time. A dose the dispenser never reports is marked missed `caregiverAlertMin` minutes after its time.
+
+## Develop locally
+
+Needs Docker.
+
+```bash
+npm run db:start        # local Supabase; prints the URL and keys
+npm run test:backend    # end-to-end checks of codes, approval, permissions, dispenser API, help, missed doses
+```
+
+Sign-in emails go to the local mail viewer at http://127.0.0.1:54324.
 
 ## Structure
 
 ```
+supabase/
+  migrations/         tables, row-level security, server functions, missed-dose job
+  templates/          sign-in email with the 6-digit code
 src/
   services/
-    types.ts          domain types (doses, slots, people, codes, alerts, device)
-    mockData.ts       seed data: Mihika, Nanaji, Ravi, 3 medicines, a week of history
-    deviceService.ts  DeviceService interface + MockDeviceService (localStorage)
-    useApp.ts         React hooks over the service
-  components/
-    Pebble.tsx        the mascot in SVG with moods and idle animations
-    FamilyCodeCard.tsx
-    ui.tsx            chips, pill icons, nav, toggles, toast
-  pages/
-    SignIn.tsx, Join.tsx
-    caregiver/        Onboarding, Today, DoseDetail, Medicines, SlotEdit, Refills,
-                      Weekly, Alerts, Device, Privacy, Family, Messages, More
-    parent/           ParentToday, PillTime, MessageFamily, ParentPrivacy, ParentMenu, ParentWaiting
-  lib/                time zones, i18n strings (en/hi/gu), session
+    service.ts        the DeviceService interface every screen uses
+    liveService.ts    Supabase implementation
+    mockService.ts    demo family in the browser
+    mockData.ts, notifications.ts, types.ts
+  components/         Pebble, chips, pill icons, family code card, email sign-in
+  pages/              sign-in, join, caregiver/*, parent/*
+  lib/                time zones, translations (en/hi/gu), session
+scripts/              provision a dispenser, simulate a dispenser
+firmware/             ESP32 sketch
+tests/                backend tests against local Supabase
 ```
 
-### Swapping in the real dispenser
+## Demo walkthrough
 
-All device data goes through the `DeviceService` interface in `src/services/deviceService.ts`. To connect the ESP32 dispenser, write a class that implements the same interface against your backend, and export it as `deviceService` in place of `MockDeviceService`. The UI doesn't need to change.
+Open the app without Supabase settings (or add `?demo`):
 
-### Mascot art
-
-Pebble is drawn in SVG (`src/components/Pebble.tsx`) so each mood can change pose and expression. The v4 reference images (front, three-quarter, side, back) weren't in this repo. Once they're added, they can replace the SVG or be used for the app icon (`public/pebble-icon.svg`).
-
-## Mocked for now
-
-WhatsApp messages are logged under **More → Messages** instead of being sent. Clip playback, QR scanning, sign-in and payments are placeholders, each marked in the UI.
+1. Pick **Caregiver** or **Parent** on the sign-in screen.
+2. **Today**: the 8:00 PM dose needs a look. Tap it, **Review clip**, then **Looks good** or **Not taken**.
+3. **Week**: one missed dose (Tuesday), one late, tonight's unconfirmed one.
+4. **More → Family**: approve Anika. The family code is `PEB-4K7`.
+5. Sign out, **I have a code** → **I'm the parent** → `PEB-4K7` to see joining.
+6. **Parent → Pill time (demo)** drops the 10 PM vitamin; **I took it** to celebrate.
+7. **More → Reset demo data** starts over.

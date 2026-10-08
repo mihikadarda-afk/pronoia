@@ -26,3 +26,10 @@ export function usePeople() {
   const refiller = s.people.find((p) => p.role === 'refiller' && p.status === 'active');
   return { caregiver, parent, refiller };
 }
+
+export function useAuth() {
+  return useSyncExternalStore(
+    (fn) => deviceService.subscribe(fn),
+    () => deviceService.auth(),
+  );
+}

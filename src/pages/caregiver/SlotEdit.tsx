@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
 import { ConfirmButton, PillIcon, Toggle, TopBar, readImage, useToast } from '../../components/ui';
 import { cityShort, fmtTime, hhmmLabel, instantFor } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
+import { deviceService, isDemo } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 import type { Medicine, PillShape } from '../../services/types';
 
@@ -147,7 +147,11 @@ export function SlotEdit() {
         <p className="small muted" style={{ margin: 0 }}>
           The weight sensor keeps this count up to date. Edit it only if it looks wrong.
         </p>
-        <Toggle label="Slot is stuck (demo)" hint="Simulates the sensor flagging a jam." checked={!!draft.stuck} onChange={(v) => set({ stuck: v })} />
+        {isDemo ? (
+          <Toggle label="Slot is stuck (demo)" hint="Simulates the sensor flagging a jam." checked={!!draft.stuck} onChange={(v) => set({ stuck: v })} />
+        ) : (
+          draft.stuck && <Toggle label="Slot is stuck" hint="Turn off once someone has cleared it." checked onChange={(v) => set({ stuck: v })} />
+        )}
       </section>
 
       <div className="stack" style={{ marginTop: 16 }}>
