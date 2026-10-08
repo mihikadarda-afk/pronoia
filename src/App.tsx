@@ -22,6 +22,7 @@ import { MessageFamily } from './pages/parent/MessageFamily';
 import { ParentPrivacy } from './pages/parent/ParentPrivacy';
 import { ParentMenu } from './pages/parent/ParentMenu';
 import { ParentWaiting } from './pages/parent/ParentWaiting';
+import { NeedHelp } from './pages/parent/NeedHelp';
 import { useAppState } from './services/useApp';
 
 function CaregiverLayout() {
@@ -79,6 +80,7 @@ export function App() {
                 <Route index element={<ParentToday />} />
                 <Route path="pill/:id" element={<PillTime />} />
                 <Route path="message" element={<MessageFamily />} />
+                <Route path="help" element={<NeedHelp />} />
                 <Route path="privacy" element={<ParentPrivacy />} />
                 <Route path="menu" element={<ParentMenu />} />
               </Route>

@@ -54,6 +54,9 @@ export interface DeviceService {
   // Messaging (mocked WhatsApp)
   sendWhatsApp(toPersonId: string, text: string): void;
   parentMessage(kind: 'ok' | 'call'): void;
+  /** Urgent: tells every caregiver and the nearby refill helper. Returns who was told. */
+  parentHelp(): string[];
+  acknowledgeNotice(id: string): void;
   markNoticesRead(): void;
 
   // Settings and device
@@ -402,9 +405,29 @@ class MockDeviceService implements DeviceService {
     this.set({ notices: [{ id: `n${t}`, at: t, kind: 'message', text, read: false }, ...this.state.notices] });
   }
 
+  parentHelp(): string[] {
+    const name = this.parentName();
+    const helpers = this.state.people.filter(
+      (p) => p.status === 'active' && (p.role === 'caregiver' || p.role === 'refiller'),
+    );
+    const t = Date.now() + this.clockOffset;
+    for (const p of helpers) {
+      this.sendWhatsApp(p.id, `🆘 ${name} pressed "I need help" on Pronoia. Please call ${name} now: ${this.person(this.state.parentId)?.whatsapp ?? ''}`);
+    }
+    this.set({
+      notices: [{ id: `n${t}`, at: t, kind: 'help', text: `${name} pressed "I need help".`, read: false }, ...this.state.notices],
+    });
+    return helpers.map((p) => p.name);
+  }
+
+  acknowledgeNotice(id: string) {
+    this.set({ notices: this.state.notices.map((n) => (n.id === id ? { ...n, read: true } : n)) });
+  }
+
   markNoticesRead() {
-    if (this.state.notices.every((n) => n.read)) return;
-    this.set({ notices: this.state.notices.map((n) => ({ ...n, read: true })) });
+    // Help requests stay until someone acknowledges them.
+    if (this.state.notices.every((n) => n.read || n.kind === 'help')) return;
+    this.set({ notices: this.state.notices.map((n) => (n.kind === 'help' ? n : { ...n, read: true })) });
   }
 
   // ---- settings and device ----

@@ -15,7 +15,6 @@ export function ParentToday() {
   const doses = deviceService.dosesForDay(0);
   const inCup = doses.find((d) => d.status === 'dispensed');
   const next = inCup ?? doses.find((d) => d.status === 'upcoming');
-  const done = doses.filter((d) => d.status === 'taken' || d.status === 'late');
 
   return (
     <main className="screen screen--parent" style={{ position: 'relative' }}>
@@ -52,30 +51,48 @@ export function ParentToday() {
       )}
 
       <section style={{ marginTop: 22 }}>
-        <h2 style={{ fontSize: 22, marginBottom: 10 }}>{t.takenToday}</h2>
-        {done.length === 0 ? (
-          <p className="muted">{t.nothingYet}</p>
-        ) : (
-          <div className="tick-list">
-            {done.map((d) => (
-              <div key={d.id} className="tick">
-                <span className="tick-mark" aria-hidden>
-                  <svg viewBox="0 0 24 24" width={24} height={24}>
-                    <path d="M5 12.5 L10 17 L19 7" fill="none" stroke="#fff" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+        <h2 style={{ fontSize: 22, marginBottom: 10 }}>{t.schedule}</h2>
+        <ol className="parent-schedule">
+          {doses.map((d) => {
+            const state = d.status === 'taken' || d.status === 'late' ? 'taken' : d.id === next?.id ? 'next' : d.status;
+            const label: Record<string, string> = {
+              taken: t.stTaken,
+              next: d.status === 'dispensed' ? t.stInCup : t.stNext,
+              dispensed: t.stInCup,
+              upcoming: t.stLater,
+              missed: t.stMissed,
+              unconfirmed: t.stPicked,
+            };
+            return (
+              <li key={d.id} className={`ps-row ps-row--${state}`}>
+                <span className="ps-mark" aria-hidden>
+                  {state === 'taken' || state === 'unconfirmed' ? (
+                    <svg viewBox="0 0 24 24" width={24} height={24}>
+                      <path d="M5 12.5 L10 17 L19 7" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <PillIcon med={d.medicine} size={40} />
+                  )}
                 </span>
-                <span>
-                  {hhmmLabel(d.time)} · {t.purpose(d.medicine.purpose)}
+                <span className="ps-body">
+                  <span className="ps-time">{hhmmLabel(d.time)}</span>
+                  <span className="ps-what">
+                    {t.purpose(d.medicine.purpose)} · {t.slot(d.slot)}
+                  </span>
                 </span>
-              </div>
-            ))}
-          </div>
-        )}
+                <span className="ps-status">{label[state]}</span>
+              </li>
+            );
+          })}
+        </ol>
       </section>
 
       <div className="stack" style={{ marginTop: 28 }}>
         <button className="btn btn--huge" onClick={() => nav('/parent/message')}>
           💬 {t.messageFamily}
+        </button>
+        <button className="btn btn--huge btn--blush" onClick={() => nav('/parent/help')}>
+          🆘 {t.needHelp}
         </button>
         {next && (
           <button className="btn btn--huge btn--soft" style={{ fontSize: 20 }} onClick={() => nav(`/parent/pill/${encodeURIComponent(next.id)}`)}>

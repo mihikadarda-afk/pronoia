@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { PebbleSays, type PebbleMood } from '../../components/Pebble';
 import { DualTime, PillIcon, StatusChip } from '../../components/ui';
-import { cityShort, fmtDate, fmtTime, hhmmLabel, hourOfDay } from '../../lib/time';
+import { cityShort, fmtDate, fmtTime, hhmmLabel, hourOfDay, relTime } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 import type { AppState, Dose } from '../../services/types';
@@ -56,6 +56,7 @@ export function Today() {
   const line = pebbleLine(doses, s, parent.name, quiet);
   const pending = s.people.filter((p) => p.status === 'pending');
   const unread = s.notices.filter((n) => !n.read).length;
+  const help = s.notices.filter((n) => n.kind === 'help' && !n.read);
   const lowSlots = s.medicines.filter((m) => deviceService.slotHealth(m) !== 'ok');
 
   return (
@@ -77,8 +78,29 @@ export function Today() {
         </Link>
       </header>
 
-      <PebbleSays mood={line.mood} size={92}>
-        {line.text}
+      {help.map((n) => (
+        <section key={n.id} className="card card--blush help-card" role="alert">
+          <div className="row row--top">
+            <span style={{ fontSize: 28 }} aria-hidden>🆘</span>
+            <div className="grow">
+              <h3>{parent.name} needs help</h3>
+              <span className="block small">
+                Pressed "I need help" {relTime(n.at, now.getTime())} ({fmtTime(new Date(n.at), parent.timeZone)} in {cityShort(parent.timeZone)}).
+                {refiller ? ` ${refiller.name} was told too.` : ''}
+              </span>
+              <span className="block" style={{ marginTop: 6, fontWeight: 800, userSelect: 'all' }}>
+                Call {parent.name}: {parent.whatsapp}
+              </span>
+            </div>
+          </div>
+          <button className="btn btn--block" style={{ marginTop: 12 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
+            I'm on it
+          </button>
+        </section>
+      ))}
+
+      <PebbleSays mood={help.length ? 'worried' : line.mood} size={92}>
+        {help.length ? `${parent.name} asked for help. Please call when you can.` : line.text}
       </PebbleSays>
 
       <section className="card" style={{ marginTop: 14 }}>

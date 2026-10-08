@@ -118,7 +118,7 @@ export interface DeviceStatus {
 export interface Notice {
   id: string;
   at: number;
-  kind: 'join' | 'message' | 'refill' | 'alert';
+  kind: 'join' | 'message' | 'refill' | 'alert' | 'help';
   text: string;
   read: boolean;
 }

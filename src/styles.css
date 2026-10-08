@@ -343,3 +343,19 @@ h3 { font-size: 17px; font-weight: 800; }
 .role-card[aria-pressed='true'] { border-color: var(--sage); background: var(--sage-pale); }
 .photo-pick { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; font-weight: 800; font-size: 14px; color: var(--sage); }
 .photo-pick input { display: none; }
+
+/* parent day schedule */
+.parent-schedule { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ps-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow); }
+.ps-mark { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: 50%; }
+.ps-row--taken .ps-mark, .ps-row--unconfirmed .ps-mark { background: var(--sage); color: #fff; }
+.ps-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ps-time { font-size: 24px; font-weight: 900; line-height: 1.15; }
+.ps-what { font-size: 18px; font-weight: 700; color: var(--ink-soft); }
+.ps-status { flex: none; font-size: 16px; font-weight: 800; padding: 4px 12px; border-radius: 999px; background: #ece8dc; color: var(--ink-soft); }
+.ps-row--taken .ps-status, .ps-row--unconfirmed .ps-status { background: var(--sage-pale); color: #4f6b4c; }
+.ps-row--taken .ps-time { color: var(--ink-soft); }
+.ps-row--next { background: var(--sage-pale); box-shadow: inset 0 0 0 3px var(--sage); }
+.ps-row--next .ps-status { background: var(--sage); color: #fff; }
+.ps-row--missed .ps-status { background: #f9e0da; color: #a5584a; }
+.help-card { border: 3px solid var(--blush); }
