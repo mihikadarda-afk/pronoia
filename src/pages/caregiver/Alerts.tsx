@@ -1,5 +1,7 @@
 import { PebbleSays } from '../../components/Pebble';
-import { Placeholder, Toggle, TopBar } from '../../components/ui';
+import { Link } from 'react-router-dom';
+import { Placeholder, TopBar } from '../../components/ui';
+import { CHANNELS } from '../../services/notifications';
 import { cityShort, hhmmLabel } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
@@ -17,7 +19,11 @@ function Select({ value, options, onChange, label }: { value: number; options: n
 }
 
 export function Alerts() {
-  const { alerts: a } = useAppState();
+  const { alerts: a, notifications: n } = useAppState();
+  const missedVia = n.events.missed.channels
+    .filter((c) => n.channels[c])
+    .map((c) => CHANNELS.find((x) => x.id === c)!.label)
+    .join(', ');
   const { caregiver, parent } = usePeople();
   const up = deviceService.updateAlerts.bind(deviceService);
 
@@ -53,7 +59,8 @@ export function Alerts() {
               />
             </time>
             <span>
-              <strong>Then tell you on WhatsApp</strong>, if the pill still hasn't been picked up.
+              <strong>Then tell you</strong>
+              {missedVia ? ` by ${missedVia}` : ''}, if the pill still hasn't been picked up.
             </span>
           </li>
         </ol>
@@ -74,30 +81,25 @@ export function Alerts() {
         <p className="small muted" style={{ marginTop: 0 }}>
           While you sleep ({hhmmLabel(a.quietStart)} to {hhmmLabel(a.quietEnd)}), it's daytime for {parent.name}.
         </p>
-        <Toggle
-          label="Hold alerts until morning"
-          hint="Late doses and low refills wait for your morning. Only a missed dose still comes through."
-          checked={a.quietHoldsAlerts}
-          onChange={(v) => up({ quietHoldsAlerts: v })}
-        />
+        <Link to="/care/notifications" className="card card--sage card-link row-between" style={{ margin: 0 }}>
+          <span>
+            <strong>Choose what can wake you</strong>
+            <span className="block small">Everything else waits until {hhmmLabel(a.quietEnd)}.</span>
+          </span>
+          <span aria-hidden>›</span>
+        </Link>
       </section>
 
-      <h2 className="section-title">Summaries and reminders</h2>
-      <section className="card">
-        <Toggle label="Weekly summary" hint="A short report every Sunday on WhatsApp." checked={a.weeklySummary} onChange={(v) => up({ weeklySummary: v })} />
-        <Toggle label="Refill reminders" hint="Sent to you and the refill helper." checked={a.refillReminders} onChange={(v) => up({ refillReminders: v })} />
-        {a.refillReminders && (
-          <div className="row-between" style={{ paddingTop: 8 }}>
-            <span className="small" style={{ fontWeight: 700 }}>Remind this far ahead</span>
-            <select className="select input" style={{ width: 'auto' }} value={a.refillLeadDays} onChange={(e) => up({ refillLeadDays: Number(e.target.value) })}>
-              <option value={7}>1 week</option>
-              <option value={10}>10 days</option>
-              <option value={14}>2 weeks</option>
-            </select>
-          </div>
-        )}
+      <h2 className="section-title">Refill timing</h2>
+      <section className="card row-between">
+        <span style={{ fontWeight: 700 }}>Remind this far ahead</span>
+        <select className="select input" style={{ width: 'auto' }} value={a.refillLeadDays} onChange={(e) => up({ refillLeadDays: Number(e.target.value) })}>
+          <option value={7}>1 week</option>
+          <option value={10}>10 days</option>
+          <option value={14}>2 weeks</option>
+        </select>
       </section>
-      <Placeholder>Alerts are delivered on WhatsApp. Sending is mocked in this demo.</Placeholder>
+      <Placeholder>How each alert reaches you is set in Notifications. Sending is mocked in this demo.</Placeholder>
     </main>
   );
 }

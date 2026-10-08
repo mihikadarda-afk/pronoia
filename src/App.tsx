@@ -12,6 +12,7 @@ import { Refills } from './pages/caregiver/Refills';
 import { Weekly } from './pages/caregiver/Weekly';
 import { More } from './pages/caregiver/More';
 import { Alerts } from './pages/caregiver/Alerts';
+import { Notifications } from './pages/caregiver/Notifications';
 import { Device } from './pages/caregiver/Device';
 import { Privacy } from './pages/caregiver/Privacy';
 import { Family } from './pages/caregiver/Family';
@@ -71,6 +72,7 @@ export function App() {
                 <Route path="week" element={<Weekly />} />
                 <Route path="more" element={<More />} />
                 <Route path="alerts" element={<Alerts />} />
+                <Route path="notifications" element={<Notifications />} />
                 <Route path="device" element={<Device />} />
                 <Route path="privacy" element={<Privacy />} />
                 <Route path="family" element={<Family />} />

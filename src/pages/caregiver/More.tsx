@@ -7,7 +7,8 @@ import { useAppState, usePeople } from '../../services/useApp';
 
 const links = [
   { to: '/care/family', icon: '👪', title: 'Family', sub: 'Family code, members and roles' },
-  { to: '/care/alerts', icon: '🔔', title: 'Alerts', sub: 'Escalation, quiet hours, summaries' },
+  { to: '/care/notifications', icon: '🔔', title: 'Notifications', sub: 'How you hear from Pebble, and about what' },
+  { to: '/care/alerts', icon: '⏰', title: 'Alerts and quiet hours', sub: 'When reminders escalate, when to stay quiet' },
   { to: '/care/device', icon: '📦', title: 'Device and plan', sub: 'Dispenser status and subscription' },
   { to: '/care/privacy', icon: '🔒', title: 'Privacy', sub: 'How the camera and clips work' },
   { to: '/care/messages', icon: '💬', title: 'Messages', sub: 'Updates and WhatsApp log' },

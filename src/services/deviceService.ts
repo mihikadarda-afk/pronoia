@@ -4,12 +4,17 @@ import type {
   Dose,
   DoseRecord,
   DoseStatus,
+  EventPref,
   Medicine,
+  NotificationSettings,
+  NotifyChannel,
+  NotifyEvent,
   Person,
   Role,
   SlotHealth,
 } from './types';
-import { DEMO_START, PARENT_TZ, seedState } from './mockData';
+import { DEMO_START, PARENT_TZ, defaultNotifications, seedState } from './mockData';
+import { presetEvents, type Preset } from './notifications';
 import { addMin, instantFor } from '../lib/time';
 
 /**
@@ -61,6 +66,11 @@ export interface DeviceService {
 
   // Settings and device
   updateAlerts(patch: Partial<AlertSettings>): void;
+  updateNotifications(patch: Partial<Omit<NotificationSettings, 'events'>>): void;
+  setEventPref(event: NotifyEvent, patch: Partial<EventPref>): void;
+  applyNotificationPreset(preset: Preset): void;
+  /** Sends a test to every enabled channel and returns their names. */
+  sendTestNotification(): NotifyChannel[];
   pairDevice(code: string): { ok: boolean; reason?: string };
   setDeviceOnline(online: boolean): void;
   resetDemo(): void;
@@ -75,7 +85,11 @@ export const LATE_AFTER_MIN = 30;
 function load(): AppState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as AppState) : null;
+    if (!raw) return null;
+    const state = JSON.parse(raw) as AppState;
+    // Data saved before notification settings existed.
+    if (!state.notifications) state.notifications = defaultNotifications();
+    return state;
   } catch {
     return null;
   }
@@ -434,6 +448,33 @@ class MockDeviceService implements DeviceService {
 
   updateAlerts(patch: Partial<AlertSettings>) {
     this.set({ alerts: { ...this.state.alerts, ...patch } });
+  }
+
+  updateNotifications(patch: Partial<Omit<NotificationSettings, 'events'>>) {
+    this.set({ notifications: { ...this.state.notifications, ...patch } });
+  }
+
+  setEventPref(event: NotifyEvent, patch: Partial<EventPref>) {
+    const n = this.state.notifications;
+    this.set({ notifications: { ...n, events: { ...n.events, [event]: { ...n.events[event], ...patch } } } });
+  }
+
+  applyNotificationPreset(preset: Preset) {
+    this.set({ notifications: { ...this.state.notifications, events: presetEvents(preset) } });
+  }
+
+  sendTestNotification(): NotifyChannel[] {
+    const n = this.state.notifications;
+    const on = (Object.keys(n.channels) as NotifyChannel[]).filter((c) => n.channels[c]);
+    const t = Date.now() + this.clockOffset;
+    const name = this.person(this.state.caregiverId)?.name ?? 'Caregiver';
+    this.set({
+      outbox: [
+        ...on.map((channel, i) => ({ id: `m${t}-${i}`, at: t, channel, to: name, text: 'Pebble here 💚 This is a test notification from Pronoia.' })),
+        ...this.state.outbox,
+      ].slice(0, 50),
+    });
+    return on;
   }
 
   pairDevice(input: string) {

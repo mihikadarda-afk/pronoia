@@ -359,3 +359,23 @@ h3 { font-size: 17px; font-weight: 800; }
 .ps-row--next .ps-status { background: var(--sage); color: #fff; }
 .ps-row--missed .ps-status { background: #f9e0da; color: #a5584a; }
 .help-card { border: 3px solid var(--blush); }
+
+/* notification settings */
+.preset-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.preset {
+  display: flex; flex-direction: column; gap: 4px; text-align: left;
+  padding: 12px; border-radius: 18px; border: 3px solid transparent;
+  background: var(--card); box-shadow: var(--shadow); cursor: pointer; min-width: 0;
+}
+.preset .small { color: var(--ink-soft); line-height: 1.3; }
+.preset[aria-pressed='true'] { border-color: var(--sage); background: var(--sage-pale); }
+.preset:focus-visible, .ch-chip:focus-visible { outline: 3px solid var(--sage); outline-offset: 2px; }
+@media (max-width: 380px) { .preset-row { grid-template-columns: 1fr; } }
+.ch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ch-chip {
+  min-height: 36px; padding: 4px 14px; border-radius: 999px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--card); font-weight: 800; font-size: 14px; color: var(--ink-soft);
+}
+.ch-chip[aria-pressed='true'] { background: var(--sage); border-color: var(--sage); color: #fff; }
+.ch-chip:disabled { cursor: not-allowed; opacity: 0.4; border-style: dashed; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

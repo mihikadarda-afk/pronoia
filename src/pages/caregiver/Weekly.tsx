@@ -92,7 +92,9 @@ export function Weekly() {
         </>
       )}
       <p className="small muted center">
-        {s.alerts.weeklySummary ? 'This summary is also sent to you on WhatsApp every Sunday.' : 'Weekly WhatsApp summary is off. Turn it on in Alerts.'}
+        {s.notifications.events.weeklySummary.channels.length
+          ? 'This summary is also sent to you every Sunday.'
+          : 'The Sunday summary is off. Turn it on in Notifications.'}
       </p>
     </main>
   );

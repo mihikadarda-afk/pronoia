@@ -2,8 +2,11 @@ import { useEffect } from 'react';
 import { PebbleSays } from '../../components/Pebble';
 import { Placeholder, TopBar } from '../../components/ui';
 import { relTime } from '../../lib/time';
+import { CHANNELS } from '../../services/notifications';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, useNow } from '../../services/useApp';
+
+const channelLabel = Object.fromEntries(CHANNELS.map((c) => [c.id, c.label]));
 
 export function Messages() {
   const s = useAppState();
@@ -23,18 +26,18 @@ export function Messages() {
           <span className="block small muted">{relTime(n.at, now.getTime())}</span>
         </section>
       ))}
-      <h2 className="section-title">WhatsApp log</h2>
+      <h2 className="section-title">Sent messages</h2>
       {s.outbox.length === 0 ? (
         <p className="muted small">Nothing sent yet.</p>
       ) : (
         s.outbox.map((m) => (
           <section key={m.id} className="card">
-            <span className="small muted" style={{ fontWeight: 800 }}>To {m.to} · {relTime(m.at, now.getTime())}</span>
+            <span className="small muted" style={{ fontWeight: 800 }}>{channelLabel[m.channel]} to {m.to} · {relTime(m.at, now.getTime())}</span>
             <p style={{ margin: '4px 0 0' }}>{m.text}</p>
           </section>
         ))
       )}
-      <Placeholder>These would be real WhatsApp messages. Here they're only logged.</Placeholder>
+      <Placeholder>These would be real WhatsApp messages, emails, texts and calls. Here they're only logged.</Placeholder>
     </main>
   );
 }

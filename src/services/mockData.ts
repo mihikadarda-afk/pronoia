@@ -1,4 +1,5 @@
-import type { AppState, DoseEvent, DoseRecord, Medicine } from './types';
+import type { AppState, DoseEvent, DoseRecord, Medicine, NotificationSettings } from './types';
+import { presetEvents } from './notifications';
 import { instantFor, fmtDay } from '../lib/time';
 
 export const PARENT_TZ = 'Asia/Kolkata';
@@ -138,6 +139,16 @@ export function seedRecords(now: Date): DoseRecord[] {
   return records;
 }
 
+export function defaultNotifications(): NotificationSettings {
+  return {
+    channels: { whatsapp: true, push: true, email: true, sms: false, call: true },
+    email: 'mihika@example.com',
+    phone: '+1 212 555 0148',
+    digestTime: '08:00',
+    events: presetEvents('calm'),
+  };
+}
+
 export function seedState(now: Date): AppState {
   const t = now.getTime();
   return {
@@ -207,11 +218,9 @@ export function seedState(now: Date): AppState {
       caregiverAlertMin: 30,
       quietStart: '23:00',
       quietEnd: '07:00',
-      quietHoldsAlerts: true,
-      weeklySummary: true,
-      refillReminders: true,
       refillLeadDays: 10,
     },
+    notifications: defaultNotifications(),
     device: {
       paired: true,
       deviceCode: 'PRN-82QX-7M',

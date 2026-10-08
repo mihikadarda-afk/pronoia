@@ -99,10 +99,37 @@ export interface AlertSettings {
   caregiverAlertMin: number; // WhatsApp after N minutes
   quietStart: string; // caregiver-local HH:MM
   quietEnd: string;
-  quietHoldsAlerts: boolean;
-  weeklySummary: boolean;
-  refillReminders: boolean;
   refillLeadDays: number;
+}
+
+export type NotifyChannel = 'whatsapp' | 'push' | 'email' | 'sms' | 'call';
+
+export type NotifyEvent =
+  | 'help'
+  | 'missed'
+  | 'review'
+  | 'late'
+  | 'taken'
+  | 'parentMessage'
+  | 'refill'
+  | 'slotProblem'
+  | 'offline'
+  | 'joinRequest'
+  | 'dailyDigest'
+  | 'weeklySummary';
+
+export interface EventPref {
+  channels: NotifyChannel[];
+  /** Allowed to come through during the caregiver's quiet hours. */
+  wakeMe: boolean;
+}
+
+export interface NotificationSettings {
+  channels: Record<NotifyChannel, boolean>;
+  email: string;
+  phone: string; // for SMS and calls
+  digestTime: string; // caregiver-local HH:MM
+  events: Record<NotifyEvent, EventPref>;
 }
 
 export interface DeviceStatus {
@@ -126,7 +153,7 @@ export interface Notice {
 export interface OutboxMessage {
   id: string;
   at: number;
-  channel: 'whatsapp';
+  channel: NotifyChannel;
   to: string;
   text: string;
 }
@@ -142,6 +169,7 @@ export interface AppState {
   records: DoseRecord[];
   refillLog: RefillLogEntry[];
   alerts: AlertSettings;
+  notifications: NotificationSettings;
   device: DeviceStatus;
   notices: Notice[];
   outbox: OutboxMessage[];
