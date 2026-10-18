@@ -3,13 +3,15 @@ import { MockDeviceService } from './mockService';
 import type { DeviceService } from './service';
 
 export {
-  CLIP_AFTER_REVIEW_H,
-  CLIP_AUTO_DELETE_H,
+  DOSE_WINDOW_MIN,
+  FRAMES_KEEP_H,
   LATE_AFTER_MIN,
+  isDoneDose,
   normalizeCode,
   type AuthState,
   type DeviceService,
   type NewCircle,
+  type TimelineItem,
 } from './service';
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;

@@ -1,57 +1,57 @@
-import { PebbleSays } from '../../components/Pebble';
-import { TopBar } from '../../components/ui';
-import { countdown } from '../../lib/time';
-import { CLIP_AFTER_REVIEW_H, CLIP_AUTO_DELETE_H, deviceService } from '../../services/deviceService';
+import { AppBar, Says, SectionHead } from '../../components/ui';
+import { countdown, fmtTime } from '../../lib/time';
+import { FRAMES_KEEP_H, deviceService } from '../../services/deviceService';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 
-const points = [
-  { icon: '📷', title: 'The camera sleeps', text: 'It only wakes up when a pill is lifted from the cup. No live view, no watching the room.' },
-  { icon: '⏱️', title: 'Clips are short', text: 'Just a few seconds, enough for the AI to see the pill go in.' },
-  { icon: '🗑️', title: 'Deleted within hours', text: `${CLIP_AFTER_REVIEW_H} hours after you review a clip, or automatically after ${CLIP_AUTO_DELETE_H} hours if nobody does.` },
-  { icon: '👀', title: 'Only you review', text: 'Clips are shown only to caregivers in the circle, and only when the AI was unsure.' },
-  { icon: '🙅', title: 'Never used for anything else', text: 'No ads, no training, no sharing. Dose results stay; the video does not.' },
-];
-
 export function Privacy() {
-  useAppState();
+  const s = useAppState();
   const now = useNow(1000);
   const { parent } = usePeople();
-  const live = deviceService
-    .dosesForDay(0)
-    .filter((d) => d.record?.clip && d.clipDeletesAt && d.clipDeletesAt.getTime() > now.getTime());
+  const device = s.plan.tier === 'device';
+  const points = [
+    ['The camera only turns on at dose time', `${device ? 'On the dispenser it wakes when the pill is lifted.' : 'On the dose station it turns on by itself when the pill is due,'} and turns off again right after. No live view, no watching the room.`],
+    ['Only 3 still frames are checked', 'Not a video. The frames go to the AI check, which says whether the pill was picked up and swallowed.'],
+    ['Frames are deleted within hours', `As soon as you review them, or automatically after ${FRAMES_KEEP_H} hours if nobody does. The result and the confidence score stay; the pictures don’t.`],
+    ['Never used to train AI', 'Frames are sent to Anthropic’s API only to answer that one question, and are not used to train models. No ads, no sharing.'],
+    ['Check-ins are a tap', 'The camera is never used for check-ins. It’s a hello, not surveillance, and it’s not fall detection.'],
+  ];
+  const stored = [-1, 0]
+    .flatMap((d) => deviceService.dosesForDay(d))
+    .filter((d) => d.record?.frames?.state === 'awaiting' && d.framesDeleteAt && d.framesDeleteAt.getTime() > now.getTime());
 
   return (
     <main className="screen">
-      <TopBar title="Privacy" back="/care/more" />
-      <PebbleSays mood="happy" size={88}>
-        {parent.name} should feel cared for, not watched. Here's exactly what the camera does.
-      </PebbleSays>
-      <div style={{ marginTop: 14 }}>
-        {points.map((p) => (
-          <section key={p.title} className="card row row--top">
-            <span style={{ fontSize: 26 }} aria-hidden>{p.icon}</span>
-            <span>
-              <strong>{p.title}</strong>
-              <span className="block small">{p.text}</span>
-            </span>
-          </section>
+      <AppBar title="Privacy" back />
+      <Says mood="happy" size={40}>
+        {parent.name} should feel cared for, not watched. Here’s exactly what happens.
+      </Says>
+      <ul className="list" style={{ marginTop: 16 }}>
+        {points.map(([t, d]) => (
+          <li key={t} style={{ padding: '12px 0' }}>
+            <div className="lrow-title">{t}</div>
+            <div className="lrow-sub">{d}</div>
+          </li>
         ))}
-      </div>
-      <h2 className="section-title">Clips stored right now</h2>
-      <section className="card">
-        {live.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>None. Every clip has been deleted.</p>
-        ) : (
-          <ul className="list-plain">
-            {live.map((d) => (
-              <li key={d.id} className="row-between">
-                <span>{d.medicine.name}, slot {d.slot}</span>
-                <strong>deletes in {countdown(d.clipDeletesAt!.getTime(), now.getTime())}</strong>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      </ul>
+      {s.plan.tier !== 'free' && (
+        <>
+          <SectionHead title="Frames stored right now" />
+          {stored.length === 0 ? (
+            <p className="small muted">None. Every frame has been deleted.</p>
+          ) : (
+            <ul className="list">
+              {stored.map((d) => (
+                <li key={d.id} className="lrow lrow--simple" style={{ cursor: 'default' }}>
+                  <span>
+                    {d.medicine.name}, {fmtTime(d.scheduledAt, parent.timeZone)}
+                  </span>
+                  <span className="small num">deleted in {countdown(d.framesDeleteAt!.getTime(), now.getTime())}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </main>
   );
 }

@@ -46,7 +46,7 @@ export function CreateCircle({ onCreated }: { onCreated: () => void }) {
   };
 
   const zoneSelect = (id: string, value: string, k: 'myTz' | 'parentTz') => (
-    <select id={id} className="select input" value={value} onChange={set(k)}>
+    <select id={id} className="select" value={value} onChange={set(k)}>
       {ZONES.map((z) => (
         <option key={z} value={z}>{cityShort(z)}</option>
       ))}
@@ -55,19 +55,18 @@ export function CreateCircle({ onCreated }: { onCreated: () => void }) {
 
   return (
     <main className="screen screen--plain">
-      <div style={{ height: 16 }} />
-      <PebbleSays mood="waving" size={110} align="stack">
-        Hi! I'm Pebble. Let's set up your family circle.
+      <div style={{ height: 24 }} />
+      <PebbleSays mood="waving" size={40}>
+        Hi, I’m Pebble. Let’s set up your family circle.
       </PebbleSays>
       <form
-        className="card"
-        style={{ marginTop: 18 }}
+        style={{ marginTop: 20 }}
         onSubmit={(e) => {
           e.preventDefault();
           create();
         }}
       >
-        <h2 style={{ marginBottom: 12 }}>About you</h2>
+        <h2 style={{ marginBottom: 12, fontSize: 15 }}>About you</h2>
         <label className="field">
           <span>Your name</span>
           <input id="cc-my-name" className="input" required value={f.myName} onChange={set('myName')} placeholder="Mihika" />
@@ -82,7 +81,7 @@ export function CreateCircle({ onCreated }: { onCreated: () => void }) {
             {zoneSelect('cc-my-tz', f.myTz, 'myTz')}
           </label>
         </div>
-        <h2 style={{ margin: '8px 0 12px' }}>Who are you looking after?</h2>
+        <h2 style={{ margin: '8px 0 12px', fontSize: 15 }}>Who are you looking after?</h2>
         <label className="field">
           <span>What you call them</span>
           <input id="cc-parent-name" className="input" required value={f.parentName} onChange={set('parentName')} placeholder="Nanaji" />
@@ -106,7 +105,7 @@ export function CreateCircle({ onCreated }: { onCreated: () => void }) {
           {busy ? 'Creating…' : 'Create our circle'}
         </button>
       </form>
-      <button className="link-btn" style={{ width: '100%' }} onClick={() => deviceService.signOut()}>
+      <button className="link-btn link-btn--quiet" style={{ width: '100%', marginTop: 12 }} onClick={() => deviceService.signOut()}>
         Sign out
       </button>
     </main>

@@ -3,25 +3,21 @@ import { ConfirmButton } from '../components/ui';
 import { deviceService } from '../services/deviceService';
 import { useAuth } from '../services/useApp';
 
-/** Refill helpers don't use the app day to day: reminders reach them on WhatsApp. */
+/** Refillers don't use the app day to day: reminders and check-in requests reach them on WhatsApp. */
 export function RefillerHome() {
   const auth = useAuth();
   const pending = auth.status === 'pending';
   return (
-    <main className="screen screen--parent stack">
-      <div className="parent-hero" style={{ paddingTop: 40 }}>
-        <PebbleSays mood={pending ? 'sleepy' : 'happy'} size={150} align="stack">
-          <span style={{ fontSize: 22 }}>
-            {pending
-              ? `Waiting for ${auth.caregiverName ?? 'your family'} to approve you.`
-              : "You're all set. I'll send refill reminders on WhatsApp."}
-          </span>
+    <main className="parent">
+      <div className="p-hero" style={{ paddingTop: 56 }}>
+        <PebbleSays mood={pending ? 'sleepy' : 'happy'} size={130} align="stack">
+          {pending ? `Waiting for ${auth.caregiverName ?? 'your family'} to approve you.` : 'You’re all set. I’ll message you on WhatsApp.'}
         </PebbleSays>
-        <p style={{ fontSize: 18 }}>
-          You don't need to open the app. When a slot runs low, you'll get a message saying which one and when.
+        <p style={{ fontSize: 20 }}>
+          No need to open the app. You’ll get refill reminders, and if a check-in is missed, a message asking you to look in. Reply OK when you have.
         </p>
       </div>
-      <ConfirmButton className="btn btn--huge btn--ghost" confirmLabel="Tap again to leave" onConfirm={() => deviceService.signOut()}>
+      <ConfirmButton className="p-btn p-btn--secondary p-btn--small" confirmLabel="Tap again to leave" onConfirm={() => deviceService.signOut()}>
         Leave this circle on this phone
       </ConfirmButton>
     </main>

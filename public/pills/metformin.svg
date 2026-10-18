@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="90%"><stop offset="0" stop-color="#E7E6E0"/><stop offset="1" stop-color="#C6C4BA"/></radialGradient>
+    <linearGradient id="pill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.55" stop-color="#EEF0F1"/><stop offset="1" stop-color="#CED2D5"/></linearGradient>
+    <filter id="blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <rect width="120" height="120" fill="url(#bg)"/>
+  <g transform="rotate(-24 60 60)">
+    <rect x="22" y="48" width="80" height="34" rx="17" fill="#6F6E66" opacity="0.35" filter="url(#blur)"/>
+    <rect x="18" y="42" width="84" height="34" rx="17" fill="url(#pill)"/>
+    <rect x="18" y="42" width="84" height="34" rx="17" fill="none" stroke="#C3C7CA" stroke-width="1"/>
+    <path d="M60 46 V72" stroke="#C9CDD0" stroke-width="1.6"/>
+    <text x="40" y="63" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="#C2C6C9">M</text>
+    <text x="80" y="63" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" font-weight="700" fill="#C2C6C9">500</text>
+    <rect x="28" y="46" width="46" height="6" rx="3" fill="#FFFFFF" opacity="0.7"/>
+  </g>
+</svg>

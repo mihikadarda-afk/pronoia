@@ -1,18 +1,23 @@
 {
   "name": "pronoia",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node --watch server/index.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "serve": "node server/index.mjs",
     "typecheck": "tsc --noEmit",
-    "test:backend": "node --test tests/*.test.mjs",
+    "test": "node --test tests/server.test.mjs",
+    "test:backend": "node --test tests/backend.test.mjs",
     "db:start": "supabase start",
-    "db:reset": "supabase db reset"
+    "db:reset": "supabase db reset",
+    "test:sql": "bash scripts/test-sql.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@supabase/supabase-js": "^2.117.3",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",

@@ -4,4 +4,6 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: './',
+  // The AI dose check runs on the small Node server (npm run dev:api).
+  server: { proxy: { '/api': 'http://localhost:8787' } },
 });

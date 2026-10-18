@@ -15,17 +15,18 @@ export function ParentWaiting() {
   const auth = useAuth();
   const name = isDemo ? caregiver.name : (auth.caregiverName ?? caregiver.name);
   return (
-    <main className="screen screen--parent stack">
-      <div className="parent-hero" style={{ paddingTop: 50 }}>
-        <PebbleSays mood="sleepy" size={150} align="stack">
-          <span style={{ fontSize: 24 }}>{t.waiting(name)}</span>
+    <main className="parent">
+      <div className="p-hero" style={{ paddingTop: 64 }}>
+        <PebbleSays mood="sleepy" size={140} align="stack">
+          {t.waiting(name)}
         </PebbleSays>
-        <p style={{ fontSize: 20 }}>{t.waitingSub}</p>
+        <p>{t.waitingSub}</p>
       </div>
       {isDemo && (
         <>
           <button
-            className="btn btn--huge btn--soft"
+            className="p-btn p-btn--secondary p-btn--small"
+            style={{ marginTop: 20 }}
             onClick={() => {
               session.signIn('caregiver');
               nav('/care/family');

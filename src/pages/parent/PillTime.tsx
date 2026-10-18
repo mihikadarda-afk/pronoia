@@ -1,92 +1,89 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
-import { Placeholder, PillIcon } from '../../components/ui';
+import { PillPhoto } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { hhmmLabel } from '../../lib/time';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService, isDoneDose } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 
 export function PillTime() {
-  useAppState();
+  const s = useAppState();
   const t = useT();
   const nav = useNavigate();
   const { id = '' } = useParams();
   const { caregiver } = usePeople();
-  const [phase, setPhase] = useState<'ready' | 'done'>('ready');
-  const dose = deviceService.dose(id);
+  const [done, setDone] = useState(false);
+  const dose = deviceService.dose(decodeURIComponent(id));
+  const plan = s.plan.tier;
 
-  // When pill time arrives the dispenser drops the pill into the cup.
+  // Phone and Device plans: the station or dispenser confirms the dose, and this screen celebrates on its own.
+  const finished = !!dose && (isDoneDose(dose.status) || dose.status === 'unconfirmed');
   useEffect(() => {
-    if (isDemo && dose && dose.status === 'upcoming') deviceService.simulateDispense(dose.slot, dose.time);
-  }, [dose]);
-
-  // Live: the dispenser reports the swallow, and this screen celebrates on its own.
-  const finished = dose?.status === 'taken' || dose?.status === 'late';
-  useEffect(() => {
-    if (!isDemo && finished) setPhase('done');
-  }, [finished]);
+    if (finished && plan !== 'free') setDone(true);
+  }, [finished, plan]);
 
   if (!dose) {
     return (
-      <main className="screen screen--parent">
-        <button className="btn btn--huge" onClick={() => nav('/parent')}>{t.backHome}</button>
+      <main className="parent">
+        <button className="p-btn" style={{ marginTop: 40 }} onClick={() => nav('/parent')}>
+          {t.backHome}
+        </button>
       </main>
     );
   }
 
-  const h = Number(dose.time.slice(0, 2));
-  const part = h < 12 ? t.morning : h < 17 ? t.afternoon : h < 21 ? t.evening : t.night;
+  const nick = dose.medicine.nickname || t.purpose(dose.medicine.purpose);
 
-  if (phase === 'done') {
+  if (done) {
     return (
-      <main className="screen screen--parent stack">
-        <div className="parent-hero" style={{ paddingTop: 30 }}>
-          <PebbleSays mood="celebrating" size={170} align="stack">
-            <span style={{ fontSize: 30 }}>{t.wellDone}</span>
+      <main className="parent">
+        <div className="p-hero" style={{ paddingTop: 48 }}>
+          <PebbleSays mood="celebrating" size={150} align="stack">
+            {t.wellDone}
           </PebbleSays>
-          <p className="parent-big" style={{ marginTop: 18 }}>{t.willKnow(caregiver.name)}</p>
+          <h1 style={{ marginTop: 16 }}>{t.willKnow(caregiver.name)}</h1>
         </div>
-        <button className="btn btn--huge" onClick={() => nav('/parent')}>{t.backHome}</button>
+        <button className="p-btn" style={{ marginTop: 32 }} onClick={() => nav('/parent')}>
+          {t.backHome}
+        </button>
       </main>
     );
   }
 
   return (
-    <main className="screen screen--parent stack">
-      <div className="parent-hero" style={{ paddingTop: 20 }}>
-        <PebbleSays mood="waving" size={150} align="stack">
-          <span style={{ fontSize: 24 }}>{t.timeFor(part)}</span>
+    <main className="parent">
+      <div className="p-hero" style={{ paddingTop: 24 }}>
+        <PebbleSays mood="waving" size={110} align="stack">
+          {t.timeFor(nick)}
         </PebbleSays>
       </div>
-      <div className="parent-pill-card">
-        <PillIcon med={dose.medicine} size={96} />
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 900 }}>{t.purpose(dose.medicine.purpose)}</div>
-          <div className="muted" style={{ fontSize: 20, fontWeight: 700 }}>
-            {hhmmLabel(dose.time)} · {t.slot(dose.slot)}
-          </div>
-        </div>
+      <div className="p-hero" style={{ marginTop: 16 }}>
+        <PillPhoto med={dose.medicine} size={180} className="station-pill" />
+        <h1>{t.takeNow(nick)}</h1>
+        <p className="muted" style={{ margin: 0 }}>
+          {hhmmLabel(dose.time)}
+          {dose.medicine.withFood ? ` · ${dose.medicine.withFood}` : ''}
+        </p>
       </div>
-      <p style={{ fontSize: 22, fontWeight: 700, textAlign: 'center' }}>{t.liftFromCup}</p>
-      {isDemo ? (
-        <>
+      <div className="stack" style={{ marginTop: 28 }}>
+        {plan === 'free' ? (
           <button
-            className="btn btn--huge"
+            className="p-btn p-btn--huge"
             onClick={() => {
-              deviceService.simulatePickupAndSwallow(dose.id);
-              setPhase('done');
+              deviceService.markTaken(dose.id);
+              setDone(true);
             }}
           >
-            ✓ {t.iTookIt}
+            {t.iTookIt}
           </button>
-          <Placeholder>Demo: on the real dispenser the weight sensor and camera notice this on their own.</Placeholder>
-        </>
-      ) : (
-        <button className="btn btn--huge btn--ghost" onClick={() => nav('/parent')}>
+        ) : (
+          <p style={{ textAlign: 'center' }}>{plan === 'device' ? t.liftFromCup : t.cameraChecking}</p>
+        )}
+        <button className="p-link" onClick={() => nav('/parent')}>
           {t.back}
         </button>
-      )}
+      </div>
     </main>
   );
 }

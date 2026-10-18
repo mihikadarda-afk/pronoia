@@ -69,7 +69,7 @@ export function EmailCodeForm({ onDone, cta = 'Send me a code' }: { onDone?: () 
             autoFocus
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            style={{ letterSpacing: 6, fontWeight: 800, fontSize: 22 }}
+            style={{ letterSpacing: 6, fontWeight: 600, fontSize: 22 }}
           />
         </label>
       )}

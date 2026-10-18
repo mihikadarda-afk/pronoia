@@ -33,3 +33,7 @@ export function useAuth() {
     () => deviceService.auth(),
   );
 }
+
+export function usePlan() {
+  return useAppState().plan.tier;
+}

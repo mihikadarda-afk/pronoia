@@ -2,30 +2,42 @@ import { createClient, type RealtimeChannel, type Session, type SupabaseClient }
 import type {
   AlertSettings,
   AppState,
+  Billing,
+  CheckInRecord,
+  CheckInSettings,
+  DoseCheckResult,
   DoseRecord,
   EventPref,
+  FamilyNote,
   Medicine,
   NotificationSettings,
   Notice,
   NotifyChannel,
   NotifyEvent,
   OutboxMessage,
+  Pause,
   Person,
+  Plan,
   Role,
+  StationStatus,
 } from './types';
-import { defaultNotifications } from './mockData';
+import { defaultCheckInSettings, defaultNotifications } from './mockData';
 import { presetEvents, type Preset } from './notifications';
 import { BaseService, normalizeCode, type AuthState, type DeviceService, type NewCircle } from './service';
+import { setAiTokenSource } from './aiCheck';
 import { zonedDate } from '../lib/time';
 
 const ONLINE_WITHIN_MS = 10 * 60_000;
 const PENDING_KEY = 'pronoia.pendingCaregiver';
 const DEFAULT_ALERTS: AlertSettings = {
-  dispenserReminderMin: 10,
+  parentReminderMin: 10,
   caregiverAlertMin: 30,
   quietStart: '23:00',
   quietEnd: '07:00',
+  reviewBelow: 70,
   refillLeadDays: 10,
+  weeklySummary: true,
+  refillReminders: true,
 };
 
 // Rows as they come from the database.
@@ -36,6 +48,7 @@ const medFromRow = (r: Row): Medicine => ({
   name: r.name,
   purpose: r.purpose,
   strength: r.strength,
+  nickname: r.nickname ?? '',
   times: r.times ?? [],
   withFood: r.with_food ?? undefined,
   pillsLeft: r.pills_left,
@@ -51,6 +64,7 @@ function medToRow(m: Partial<Medicine>): Row {
   if (m.name !== undefined) out.name = m.name;
   if (m.purpose !== undefined) out.purpose = m.purpose;
   if (m.strength !== undefined) out.strength = m.strength;
+  if (m.nickname !== undefined) out.nickname = m.nickname;
   if (m.times !== undefined) out.times = m.times;
   if ('withFood' in m) out.with_food = m.withFood ?? null;
   if (m.pillsLeft !== undefined) out.pills_left = m.pillsLeft;
@@ -103,7 +117,7 @@ const blankPerson = (id: string, role: Role): Person => ({
 /** A harmless state for screens that render before data arrives. */
 function emptyState(): AppState {
   return {
-    version: 1,
+    version: 2,
     circleName: '',
     caregiverId: 'me',
     parentId: 'parent',
@@ -111,13 +125,19 @@ function emptyState(): AppState {
     code: { code: '', createdAt: 0, expiresAt: 0, used: true },
     medicines: [],
     records: [],
+    checkIns: [],
+    checkInSettings: defaultCheckInSettings(),
+    pause: null,
+    familyNotes: [],
     refillLog: [],
     alerts: DEFAULT_ALERTS,
     notifications: defaultNotifications(),
     device: { paired: false, deviceCode: '', online: false, wifiDbm: 0, camera: 'off', lastSync: 0, firmware: '' },
+    station: { linked: false, online: false, battery: 0, charging: false, camera: 'ready', lastSeen: 0 },
     notices: [],
     outbox: [],
-    plan: { deviceUsd: 200, monthlyUsd: 15, since: Date.now() },
+    plan: { tier: 'free', billing: 'monthly', since: Date.now() },
+    updatedAt: 0,
   };
 }
 
@@ -140,6 +160,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   private circleId: string | null = null;
   private myMemberId: string | null = null;
   private recordIds = new Map<string, string>(); // dose id -> database id
+  private checkInIds = new Map<string, string>(); // check-in id -> database id
+  private lastBeat = 0;
   private listeners = new Set<() => void>();
   private errorListeners = new Set<(m: string) => void>();
   private channel: RealtimeChannel | null = null;
@@ -150,6 +172,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   constructor(url: string, key: string) {
     super();
     this.sb = createClient(url, key);
+    setAiTokenSource(async () => (await this.sb.auth.getSession()).data.session?.access_token);
     this.sb.auth.onAuthStateChange((event, session) => {
       const changedUser = session?.user.id !== this.session?.user.id;
       this.session = session;
@@ -284,7 +307,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     const cid = me.circle_id as string;
     const caregiver = me.role === 'caregiver';
     const nothing = Promise.resolve({ data: [] as Row[], error: null });
-    const [circles, members, meds, records, codes, devices, refills, notices, outbox] = await Promise.all([
+    const since = new Date(Date.now() - 8 * 86_400_000).toISOString().slice(0, 10);
+    const [circles, members, meds, records, checks, notes, codes, devices, refills, notices, outbox] = await Promise.all([
       this.call(this.sb.from('circles').select('*').eq('id', cid)),
       this.call(this.sb.from('members').select('*').eq('circle_id', cid).order('created_at')),
       this.call(this.sb.from('medicines').select('*').eq('circle_id', cid).order('slot')),
@@ -293,8 +317,10 @@ export class LiveDeviceService extends BaseService implements DeviceService {
           .from('dose_records')
           .select('*')
           .eq('circle_id', cid)
-          .gte('scheduled_date', new Date(Date.now() - 8 * 86_400_000).toISOString().slice(0, 10)),
+          .gte('scheduled_date', since),
       ),
+      this.call(this.sb.from('check_ins').select('*').eq('circle_id', cid).gte('scheduled_date', since)),
+      this.call(this.sb.from('family_notes').select('*').eq('circle_id', cid).order('at', { ascending: false }).limit(20)),
       caregiver
         ? this.call(this.sb.from('family_codes').select('*').eq('circle_id', cid).order('created_at', { ascending: false }).limit(1))
         : nothing.then((r) => r.data),
@@ -320,9 +346,12 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
     const today = zonedDate(new Date(), parentTz);
     this.recordIds.clear();
+    const offsetOf = (date: string) => {
+      const [y, m, d] = date.split('-').map(Number);
+      return dayDiff({ y, m, d }, today);
+    };
     const doseRecords: DoseRecord[] = (records as Row[]).map((r) => {
-      const [y, m, d] = (r.scheduled_date as string).split('-').map(Number);
-      const dayOffset = dayDiff({ y, m, d }, today);
+      const dayOffset = offsetOf(r.scheduled_date);
       const id = `${dayOffset}:${r.slot}:${r.time}`;
       this.recordIds.set(id, r.id);
       return {
@@ -330,12 +359,35 @@ export class LiveDeviceService extends BaseService implements DeviceService {
         dayOffset,
         slot: r.slot,
         time: r.time,
-        status: r.status,
+        // The dispenser's "in the cup" is the app's "due".
+        status: r.status === 'dispensed' ? 'due' : r.status,
         events: r.events ?? [],
-        confidence: r.confidence ?? undefined,
-        clip: r.clip ?? undefined,
+        // Stored 0..1 (as the dispenser reports it), shown as a percentage.
+        confidence: r.confidence == null ? undefined : Math.round(r.confidence * 100),
+        frames: r.frames ?? undefined,
       };
     });
+    this.checkInIds.clear();
+    const checkIns: CheckInRecord[] = (checks as Row[]).map((r) => {
+      const dayOffset = offsetOf(r.scheduled_date);
+      const id = `${dayOffset}:${r.time}`;
+      this.checkInIds.set(id, r.id);
+      return {
+        id,
+        dayOffset,
+        time: r.time,
+        status: r.status,
+        at: r.at ? Date.parse(r.at) : undefined,
+        events: r.events ?? [],
+        pausedUntil: r.paused_until ? Date.parse(r.paused_until) : undefined,
+        note: r.note ?? undefined,
+        smile: r.smile,
+        reply: r.reply ?? undefined,
+      };
+    });
+    const stationMember = people.find((p) => p.role === 'station');
+    const st = circle?.station as Row | null;
+    const savedAlerts = (circle?.alerts ?? {}) as Row;
 
     const code = (codes as Row[])[0];
     const dev = (devices as Row[])[0];
@@ -347,18 +399,24 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     };
 
     this.state = {
-      version: 1,
+      version: 2,
       circleName: circle?.name ?? '',
       caregiverId: me.role === 'caregiver' ? me.id : (owner?.id ?? me.id),
       parentId: parent?.id ?? 'parent',
-      people: parent ? people : [...people, blankPerson('parent', 'parent')],
+      people: (parent ? people : [...people, blankPerson('parent', 'parent')]).filter((p) => p.role !== 'station'),
       code: code
         ? { code: code.code, createdAt: Date.parse(code.created_at), expiresAt: Date.parse(code.expires_at), used: code.used }
         : { code: '', createdAt: 0, expiresAt: 0, used: true },
       medicines: (meds as Row[]).map(medFromRow),
       records: doseRecords,
+      checkIns,
+      checkInSettings: { ...defaultCheckInSettings(), ...(circle?.checkins ?? {}) },
+      pause: (circle?.pause as Pause | null) ?? null,
+      familyNotes: (notes as Row[]).map(
+        (n): FamilyNote => ({ id: n.id, at: Date.parse(n.at), from: n.from_name, kind: n.kind, seconds: n.seconds ?? undefined, seen: n.seen }),
+      ),
       refillLog: (refills as Row[]).map((r) => ({ id: r.id, at: Date.parse(r.at), by: r.by_name, slots: r.slots, note: r.note ?? undefined })),
-      alerts: { ...DEFAULT_ALERTS, ...(circle?.alerts ?? {}) },
+      alerts: { ...DEFAULT_ALERTS, parentReminderMin: savedAlerts.dispenserReminderMin ?? DEFAULT_ALERTS.parentReminderMin, ...savedAlerts },
       notifications: prefs,
       device: dev
         ? {
@@ -371,13 +429,26 @@ export class LiveDeviceService extends BaseService implements DeviceService {
             firmware: dev.firmware ?? '',
           }
         : emptyState().device,
+      station: {
+        linked: !!stationMember && stationMember.status === 'active',
+        online: !!st?.last_seen && Date.now() - Number(st.last_seen) < ONLINE_WITHIN_MS,
+        battery: st?.battery ?? 0,
+        charging: st?.charging ?? false,
+        camera: st?.camera ?? 'ready',
+        lastSeen: st?.last_seen ? Number(st.last_seen) : 0,
+      },
       notices: (notices as Row[]).map(
         (n): Notice => ({ id: n.id, at: Date.parse(n.at), kind: n.kind, text: n.text, read: n.read }),
       ),
       outbox: (outbox as Row[]).map(
         (m): OutboxMessage => ({ id: m.id, at: Date.parse(m.at), channel: m.channel, to: m.to_name, text: m.text }),
       ),
-      plan: { deviceUsd: 200, monthlyUsd: 15, since: circle ? Date.parse(circle.created_at) : Date.now() },
+      plan: {
+        tier: (circle?.plan?.tier as Plan) ?? 'free',
+        billing: (circle?.plan?.billing as Billing) ?? 'monthly',
+        since: circle ? Date.parse(circle.plan?.since ?? circle.created_at) : Date.now(),
+      },
+      updatedAt: Date.now(),
     };
     this.setAuth({ status: 'ready', role: me.role, ...base });
   }
@@ -385,7 +456,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   /** Live updates: any change another phone or the dispenser makes triggers a re-read. */
   private watch() {
     if (this.channel) return;
-    const tables = ['circles', 'members', 'medicines', 'dose_records', 'refill_log', 'notices', 'outbox', 'devices'];
+    const tables = ['circles', 'members', 'medicines', 'dose_records', 'check_ins', 'family_notes', 'refill_log', 'notices', 'outbox', 'devices'];
     let ch = this.sb.channel('pronoia');
     for (const table of tables) {
       ch = ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => this.scheduleRefresh());
@@ -428,17 +499,95 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   // ---- doses ----
 
-  reviewClip(id: string, verdict: 'taken' | 'not_taken') {
+  async refresh() {
+    await this.reload();
+  }
+
+  // ---- plans ----
+
+  setPlan(tier: Plan, billing: Billing = this.state.plan.billing) {
+    const plan = { tier, billing, since: new Date(this.state.plan.since).toISOString() };
+    this.patch({ plan: { ...this.state.plan, tier, billing } });
+    this.write(this.sb.from('circles').update({ plan }).eq('id', this.circleId));
+  }
+
+  // ---- doses ----
+
+  markTaken(id: string) {
+    const d = this.dose(id);
+    if (!d) return;
+    this.write(this.sb.rpc('mark_taken', { p_slot: d.slot, p_time: d.time }));
+  }
+
+  recordDoseCheck(id: string, result: DoseCheckResult, frames: string[]) {
+    const d = this.dose(id);
+    if (!d) return;
+    this.write(
+      this.sb.rpc('station_dose_result', {
+        p_slot: d.slot,
+        p_time: d.time,
+        p_status: result.status,
+        p_confidence: result.confidence,
+        p_note: result.reason,
+        p_frames: frames,
+        p_sample: !!result.sample,
+      }),
+    );
+  }
+
+  reviewFrames(id: string, verdict: 'taken' | 'not_taken') {
     const dbId = this.recordIds.get(id);
     if (!dbId) return;
-    this.write(this.sb.rpc('review_clip', { p_record: dbId, p_verdict: verdict }));
+    this.write(this.sb.rpc('review_frames', { p_record: dbId, p_verdict: verdict }));
   }
 
-  simulateDispense(slot: number, time: string) {
-    return `0:${slot}:${time}`;
+  // ---- check-ins ----
+
+  checkInNow() {
+    const due = this.currentCheckIn();
+    this.patch({ pause: null });
+    this.write(this.sb.rpc('check_in', { p_time: due?.time ?? null }));
   }
 
-  simulatePickupAndSwallow() {}
+  sendSmile() {
+    this.write(this.sb.rpc('send_smile'));
+  }
+
+  pauseCheckIns(kind: Pause['kind'], hours: number) {
+    const t = Date.now();
+    this.patch({ pause: { kind, from: t, until: t + hours * 3600_000 } });
+    this.write(this.sb.rpc('pause_check_ins', { p_kind: kind, p_minutes: Math.round(hours * 60) }));
+  }
+
+  resumeCheckIns() {
+    this.patch({ pause: null });
+    this.write(this.sb.rpc('resume_check_ins'));
+  }
+
+  replyToCheckIn(id: string, kind: 'heart' | 'voice') {
+    const dbId = this.checkInIds.get(id);
+    if (!dbId) return;
+    this.patch({ checkIns: this.state.checkIns.map((c) => (c.id === id ? { ...c, reply: kind } : c)) });
+    this.write(this.sb.rpc('reply_to_check_in', { p_check_in: dbId, p_kind: kind }));
+  }
+
+  markFamilyNotesSeen() {
+    if (this.state.familyNotes.every((n) => n.seen)) return;
+    this.patch({ familyNotes: this.state.familyNotes.map((n) => ({ ...n, seen: true })) });
+    this.write(this.sb.rpc('mark_family_notes_seen'));
+  }
+
+  updateCheckInSettings(patch: Partial<CheckInSettings>) {
+    const checkins = { ...this.state.checkInSettings, ...patch };
+    this.patch({ checkInSettings: checkins });
+    this.write(this.sb.from('circles').update({ checkins }).eq('id', this.circleId));
+  }
+
+  stationHeartbeat(patch: Partial<StationStatus>) {
+    if (Date.now() - this.lastBeat < 50_000) return;
+    this.lastBeat = Date.now();
+    this.write(this.sb.rpc('station_heartbeat', { p_battery: patch.battery ?? null, p_charging: patch.charging ?? null, p_camera: patch.camera ?? 'ready' }));
+  }
 
   // ---- slots ----
 
@@ -447,9 +596,9 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     this.write(this.sb.from('medicines').update(medToRow(patch)).eq('circle_id', this.circleId).eq('slot', slot));
   }
 
-  addMedicine(slot: number) {
+  addMedicine(slot: number, initial: Partial<Medicine> = {}) {
     this.write(
-      this.sb.from('medicines').insert({ circle_id: this.circleId, slot, name: 'New medicine', times: ['09:00'], pills_left: 0 }),
+      this.sb.from('medicines').insert({ name: 'New medicine', times: ['09:00'], pills_left: 30, ...medToRow(initial), circle_id: this.circleId, slot }),
     );
   }
 
@@ -524,11 +673,12 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     const refiller = this.state.people.find((p) => p.role === 'refiller' && p.status === 'active');
     if (!refiller) return;
     const parent = this.state.people.find((p) => p.id === this.state.parentId);
+    const device = this.state.plan.tier === 'device';
     const low = this.state.medicines.filter((m) => this.slotHealth(m) !== 'ok');
-    const list = low.length ? low.map((m) => `slot ${m.slot} (${m.name})`).join(', ') : 'all slots';
+    const list = low.length ? low.map((m) => (device ? `slot ${m.slot} (${m.name})` : m.name)).join(', ') : 'all medicines';
     this.sendWhatsApp(
       refiller.id,
-      `Hi ${refiller.name}, Pebble here 💚 ${parent?.name ?? 'The'}'s dispenser needs a refill soon: ${list}. Thank you!`,
+      `Hi ${refiller.name}, Pebble here 💚 ${parent?.name ?? 'The'}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`,
     );
   }
 
@@ -567,7 +717,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   updateAlerts(patch: Partial<AlertSettings>) {
     const alerts = { ...this.state.alerts, ...patch };
     this.patch({ alerts });
-    this.write(this.sb.from('circles').update({ alerts }).eq('id', this.circleId));
+    // The dispenser firmware reads dispenserReminderMin.
+    this.write(this.sb.from('circles').update({ alerts: { ...alerts, dispenserReminderMin: alerts.parentReminderMin } }).eq('id', this.circleId));
   }
 
   private saveNotifications(notifications: NotificationSettings) {
@@ -616,7 +767,4 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     }
   }
 
-  setDeviceOnline() {}
-
-  resetDemo() {}
 }

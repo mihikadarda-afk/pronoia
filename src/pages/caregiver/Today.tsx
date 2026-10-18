@@ -1,188 +1,227 @@
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PebbleSays, type PebbleMood } from '../../components/Pebble';
-import { DualTime, PillIcon, StatusChip } from '../../components/ui';
-import { cityShort, fmtDate, fmtTime, hhmmLabel, hourOfDay, relTime } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
+import { Pebble, type PebbleMood } from '../../components/Pebble';
+import { Locked, PillPhoto, PlanBadge, Says, Status, TimeCol, usePullToRefresh, useToast } from '../../components/ui';
+import { checkInStatus, checkInSub, checkInTitle, doseStatus, doseSub, doseTitle, pillName } from '../../lib/copy';
+import { cityShort, fmtDate, fmtTime, hhmmLabel, relTime } from '../../lib/time';
+import { deviceService, isDoneDose, type TimelineItem } from '../../services/deviceService';
+import { hasPlan } from '../../services/plans';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
-import type { AppState, Dose } from '../../services/types';
+import type { AppState, Person } from '../../services/types';
+import { CheckInSheet, DoseSheet } from './sheets';
 
-export function inQuietHours(now: Date, tz: string, start: string, end: string): boolean {
-  const h = hourOfDay(now, tz);
-  const toH = (s: string) => Number(s.slice(0, 2)) + Number(s.slice(3)) / 60;
-  const a = toH(start);
-  const b = toH(end);
-  return a <= b ? h >= a && h < b : h >= a || h < b;
-}
-
-function greeting(now: Date, tz: string) {
-  const h = hourOfDay(now, tz);
-  return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-}
-
-/** Pebble's mood and line for the home screen. */
-function pebbleLine(doses: Dose[], s: AppState, parentName: string, quiet: boolean): { mood: PebbleMood; text: string } {
-  const review = doses.find((d) => d.status === 'unconfirmed');
+/** Pebble's mood and one line for the top of Today. */
+function pebbleLine(items: TimelineItem[], s: AppState, parent: Person, refiller?: Person): { mood: PebbleMood; text: string } {
+  const name = parent.name;
+  const doses = items.flatMap((i) => (i.kind === 'dose' ? [i.dose] : []));
+  const checks = items.flatMap((i) => (i.kind === 'checkin' ? [i.checkIn] : []));
+  const help = checks.find((c) => c.status === 'help');
+  if (help) return { mood: 'worried', text: `${name} pressed I need help at ${fmtTime(new Date(help.record!.at!), parent.timeZone)}. Please call.` };
+  const missedCheck = checks.find((c) => c.status === 'missed_notified');
+  if (missedCheck) {
+    return { mood: 'worried', text: `${name} hasn’t checked in since ${hhmmLabel(missedCheck.time)}. I’ve asked ${refiller?.name ?? 'the refiller'} to look in.` };
+  }
   const missed = doses.find((d) => d.status === 'missed');
-  const taken = doses.filter((d) => d.status === 'taken' || d.status === 'late');
-  if (!s.device.paired) return { mood: 'waving', text: 'Pair the dispenser in More → Device and I\'ll start tracking doses.' };
-  if (!s.device.online) return { mood: 'sleepy', text: "The dispenser is offline. I'll let you know as soon as it's back." };
-  if (missed) return { mood: 'worried', text: `${parentName} missed the ${hhmmLabel(missed.time)} ${missed.medicine.purpose.toLowerCase()} pill. A gentle call might help.` };
-  if (review) {
-    return {
-      mood: 'thinking',
-      text: `${parentName} picked up the ${hhmmLabel(review.time)} pill, but I couldn't see it swallowed. Can you take a quick look?`,
-    };
+  if (missed) return { mood: 'worried', text: `${name} hasn’t taken the ${hhmmLabel(missed.time)} ${pillName(missed.medicine.purpose)}. A gentle call might help.` };
+  const look = doses.find((d) => d.status === 'unconfirmed' && d.record?.frames?.state === 'awaiting');
+  if (look) return { mood: 'thinking', text: `I wasn’t sure about the ${hhmmLabel(look.time)} pill. Can you take a quick look?` };
+  if (s.plan.tier === 'phone' && s.station.linked && !s.station.online) return { mood: 'sleepy', text: 'The dose station is offline. Is the old phone charging?' };
+  if (s.plan.tier === 'device' && s.device.paired && !s.device.online) return { mood: 'sleepy', text: 'The dispenser is offline. I’ll tell you when it’s back.' };
+  const due = doses.find((d) => d.status === 'due');
+  if (due) return { mood: 'waving', text: `It’s time for the ${pillName(due.medicine.purpose)}. ${s.plan.tier === 'free' ? `Waiting for ${name} to tap.` : 'I’m watching for it.'}` };
+  const done = doses.filter((d) => d.status !== 'upcoming');
+  if (done.length && done.every((d) => isDoneDose(d.status))) {
+    const allDay = doses.every((d) => isDoneDose(d.status));
+    const part = done.every((d) => Number(d.time.slice(0, 2)) < 12) ? 'morning pills' : 'pills so far';
+    return { mood: allDay ? 'celebrating' : 'happy', text: allDay ? `All done today. ${name} took every pill.` : `All good today. ${name} took the ${part}.` };
   }
-  if (quiet) return { mood: 'sleepy', text: "It's your quiet hours. I'll only wake you if something really needs you." };
-  if (taken.length && taken.length === doses.filter((d) => d.status !== 'upcoming').length) {
-    const allDone = doses.every((d) => d.status === 'taken' || d.status === 'late');
-    return {
-      mood: 'happy',
-      text: allDone ? `All good today. ${parentName} took every pill.` : `All good so far. ${parentName} took every pill that was due.`,
-    };
-  }
-  return { mood: 'waving', text: `No doses yet today. I'll keep an eye out.` };
+  if (!done.length && doses.length) return { mood: 'waving', text: `The first pill is at ${hhmmLabel(doses[0].time)}.` };
+  if (!doses.length) return { mood: 'waving', text: 'Add a medicine and I’ll start keeping track.' };
+  return { mood: 'happy', text: `Mostly good today.` };
 }
 
 export function Today() {
   const s = useAppState();
-  const now = useNow();
+  const now = useNow(30_000);
+  const toast = useToast();
   const { caregiver, parent, refiller } = usePeople();
-  const doses = deviceService.dosesForDay(0);
-  const taken = doses.filter((d) => d.status === 'taken' || d.status === 'late').length;
-  const review = doses.filter((d) => d.status === 'unconfirmed').length;
-  const upcoming = doses.filter((d) => d.status === 'upcoming' || d.status === 'dispensed').length;
-  const missed = doses.filter((d) => d.status === 'missed').length;
-  const quiet = inQuietHours(now, caregiver.timeZone, s.alerts.quietStart, s.alerts.quietEnd);
-  const line = pebbleLine(doses, s, parent.name, quiet);
+  const [doseId, setDoseId] = useState<string | null>(null);
+  const [checkId, setCheckId] = useState<string | null>(null);
+  const refresh = useCallback(() => deviceService.refresh(), []);
+  const { pull, busy } = usePullToRefresh(refresh);
+
+  const items = deviceService.timeline(0);
+  const doses = items.flatMap((i) => (i.kind === 'dose' ? [i.dose] : []));
+  const taken = doses.filter((d) => isDoneDose(d.status)).length;
+  const last = deviceService.lastCheckIn();
+  const line = pebbleLine(items, s, parent, refiller);
   const pending = s.people.filter((p) => p.status === 'pending');
-  const unread = s.notices.filter((n) => !n.read).length;
-  const help = s.notices.filter((n) => n.kind === 'help' && !n.read);
-  const lowSlots = s.medicines.filter((m) => deviceService.slotHealth(m) !== 'ok');
+  const helpNotices = s.notices.filter((n) => n.kind === 'help' && !n.read);
+  const plan = s.plan.tier;
+  const lowMeds = s.medicines.filter((m) => deviceService.slotHealth(m) !== 'ok');
+  const attention = (i: TimelineItem) =>
+    i.kind === 'dose'
+      ? i.dose.status === 'unconfirmed' && i.dose.record?.frames?.state === 'awaiting'
+      : i.checkIn.status === 'missed_notified' || i.checkIn.status === 'help';
 
   return (
     <main className="screen">
-      <header className="row-between" style={{ padding: '14px 0 10px' }}>
-        <div>
-          <p className="muted small" style={{ margin: 0, fontWeight: 800 }}>
-            {cityShort(parent.timeZone)} {fmtTime(now, parent.timeZone)} · {cityShort(caregiver.timeZone)} {fmtTime(now, caregiver.timeZone)}
-          </p>
-          <h1 style={{ fontSize: 26, fontWeight: 900 }}>
-            {greeting(now, caregiver.timeZone)}, {caregiver.name}
-          </h1>
+      <div className="ptr" style={{ height: pull }}>{busy ? 'Updating…' : pull > 50 ? 'Release to update' : 'Pull to update'}</div>
+      <header className="appbar" style={{ alignItems: 'flex-start' }}>
+        <div className="grow">
+          <h1 className="title">Today</h1>
+          <div className="clocks">
+            {parent.city || cityShort(parent.timeZone)} {fmtTime(now, parent.timeZone)} · {cityShort(caregiver.timeZone)} {fmtTime(now, caregiver.timeZone)}
+          </div>
         </div>
-        <Link to="/care/messages" className="icon-btn" aria-label={`Messages${unread ? `, ${unread} new` : ''}`} style={{ position: 'relative' }}>
-          <svg viewBox="0 0 24 24" width={22} height={22} aria-hidden>
-            <path d="M6 10 a6 6 0 0 1 12 0 v4 l2 3 H4 l2 -3 Z M10 20 h4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-          </svg>
-          {unread > 0 && <span className="badge-dot" />}
-        </Link>
+        <PlanBadge plan={plan} />
       </header>
 
-      {help.map((n) => (
-        <section key={n.id} className="card card--blush help-card" role="alert">
-          <div className="row row--top">
-            <span style={{ fontSize: 28 }} aria-hidden>🆘</span>
-            <div className="grow">
-              <h3>{parent.name} needs help</h3>
-              <span className="block small">
-                Pressed "I need help" {relTime(n.at, now.getTime())} ({fmtTime(new Date(n.at), parent.timeZone)} in {cityShort(parent.timeZone)}).
-                {refiller ? ` ${refiller.name} was told too.` : ''}
-              </span>
-              {parent.whatsapp ? (
-                <span className="block" style={{ marginTop: 6, fontWeight: 800, userSelect: 'all' }}>
-                  Call {parent.name}: {parent.whatsapp}
-                </span>
-              ) : (
-                <Link to="/care/family" className="block small" style={{ marginTop: 6, fontWeight: 800 }}>
-                  No number saved for {parent.name}. Add it in Family.
-                </Link>
-              )}
-            </div>
-          </div>
-          <button className="btn btn--block" style={{ marginTop: 12 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
-            I'm on it
+      {helpNotices.map((n) => (
+        <section key={n.id} className="alert-banner" role="alert" style={{ marginBottom: 12 }}>
+          <strong>{n.text}</strong>
+          {parent.whatsapp && <span className="block small">Call {parent.name}: <span className="num">{parent.whatsapp}</span>{refiller ? `. ${refiller.name} was told too.` : ''}</span>}
+          <button className="btn btn--small" style={{ marginTop: 10 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
+            I’m on it
           </button>
         </section>
       ))}
 
-      <PebbleSays mood={help.length ? 'worried' : line.mood} size={92}>
-        {help.length ? `${parent.name} asked for help. Please call when you can.` : line.text}
-      </PebbleSays>
-
-      <section className="card" style={{ marginTop: 14 }}>
-        <div className="row-between">
-          <div>
-            <div className="big-number">
-              {taken} <span style={{ fontSize: 22, fontWeight: 800 }}>of {doses.length}</span>
-            </div>
-            <div style={{ fontWeight: 800 }}>doses taken today</div>
-          </div>
-          <div className="small muted" style={{ textAlign: 'right', fontWeight: 700 }}>
-            {review > 0 && <div>{review} to review</div>}
-            {missed > 0 && <div>{missed} missed</div>}
-            {upcoming > 0 && <div>{upcoming} still to come</div>}
-            <div>{fmtDate(now, parent.timeZone)} in {cityShort(parent.timeZone)}</div>
-          </div>
+      <section className="card" style={{ marginTop: 4 }}>
+        <Says mood={line.mood} size={40}>
+          {line.text}
+        </Says>
+        <div className="summary" style={{ marginTop: 12 }}>
+          <span>
+            <b>{taken} of {doses.length}</b> doses
+          </span>
+          <span className="sep">·</span>
+          <span>{last ? <>Last checked in <b>{fmtTime(last, parent.timeZone)}</b></> : 'No check-in yet today'}</span>
         </div>
-        <div className="progress" style={{ marginTop: 12 }} aria-hidden>
-          <span style={{ width: `${doses.length ? (taken / doses.length) * 100 : 0}%` }} />
+        <div className="updated">
+          <span>Updated {relTime(s.updatedAt, now.getTime())}</span>
+          <Link to="/care/week" className="link-btn small" style={{ padding: 0 }}>
+            This week
+          </Link>
         </div>
       </section>
 
       {pending.length > 0 && (
-        <Link to="/care/family" className="card card--sage card-link row">
-          <span style={{ fontSize: 26 }} aria-hidden>👋</span>
-          <span className="grow">
-            <strong>{pending.map((p) => p.name).join(', ')}</strong> {pending.length > 1 ? 'are' : 'is'} waiting to join your circle.
-            <span className="block small muted">Tap to approve. Nothing is shared until you do.</span>
-          </span>
-        </Link>
-      )}
-
-      <h2 className="section-title">Today's doses</h2>
-      <div className="timeline">
-        {doses.map((d) => (
-          <div className="timeline-item" key={d.id}>
-            <div className="timeline-rail">
-              <span className={`timeline-dot dot--${d.status}`} />
-              <span className="timeline-line" />
-            </div>
-            <Link to={`/care/dose/${encodeURIComponent(d.id)}`} className="card card-link">
-              <div className="row">
-                <PillIcon med={d.medicine} />
-                <div className="grow">
-                  <div className="row-between">
-                    <h3>{d.medicine.name}</h3>
-                    <StatusChip status={d.status} short />
-                  </div>
-                  <div className="small muted" style={{ fontWeight: 700 }}>
-                    {d.medicine.purpose} · Slot {d.slot}
-                  </div>
-                  <div className="small" style={{ marginTop: 2 }}>
-                    <DualTime date={d.scheduledAt} parentTz={parent.timeZone} caregiverTz={caregiver.timeZone} />
-                  </div>
-                </div>
-              </div>
+        <ul className="list list--flush" style={{ marginTop: 8 }}>
+          <li>
+            <Link to="/care/family" className="link-row">
+              <span className="grow">
+                <span className="lrow-title block">{pending.map((p) => p.name).join(', ')} asked to join</span>
+                <span className="lrow-sub block">Nothing is shared until you approve.</span>
+              </span>
+              <span className="link-btn small">Review</span>
             </Link>
-          </div>
-        ))}
-        {doses.length === 0 && (
-          <PebbleSays mood="waving">No medicines yet. Add one in Slots and I'll start tracking.</PebbleSays>
-        )}
-      </div>
-
-      {lowSlots.length > 0 && (
-        <Link to="/care/refills" className="card card--amber card-link" style={{ marginTop: 8 }}>
-          <strong>
-            {lowSlots.map((m) => `Slot ${m.slot}`).join(', ')} {lowSlots.length > 1 ? 'are' : 'is'} running low.
-          </strong>
-          <span className="block small">
-            {lowSlots.map((m) => `${m.name}: refill by ${fmtDate(deviceService.refillInfo(m).refillBy, parent.timeZone)}`).join(' · ')}
-            {refiller ? `. ${refiller.name} handles refills.` : ''}
-          </span>
-        </Link>
+          </li>
+        </ul>
       )}
+
+      <div className="section-head">
+        <h2>{parent.name}’s day</h2>
+
+      </div>
+      {items.length === 0 ? (
+        <div style={{ padding: '24px 0' }}>
+          <Says mood="waving">No medicines or check-ins yet. Add a medicine and I’ll start keeping track.</Says>
+          <Link to="/care/meds" className="btn btn--block" style={{ marginTop: 14 }}>Add a medicine</Link>
+        </div>
+      ) : (
+        <ul className="list">
+          {items.map((i) => {
+            const cls = attention(i) ? (i.kind === 'checkin' ? 'attention attention--blush' : 'attention') : undefined;
+            if (i.kind === 'dose') {
+              const d = i.dose;
+              const st = doseStatus(d, plan);
+              return (
+                <li key={d.id} className={cls}>
+                  <button className="lrow" onClick={() => setDoseId(d.id)}>
+                    <TimeCol date={d.scheduledAt} parentTz={parent.timeZone} caregiverTz={caregiver.timeZone} />
+                    <PillPhoto med={d.medicine} />
+                    <span className="grow">
+                      <span className="lrow-title block">{doseTitle(d, parent.name, parent.timeZone)}</span>
+                      <span className="lrow-sub block">{doseSub(d)}</span>
+                    </span>
+                    <span className="lrow-end">
+                      <Status tone={st.tone}>{st.text}</Status>
+                      {d.record?.confidence !== undefined && plan !== 'free' && <span className="conf">{d.record.confidence}%</span>}
+                    </span>
+                  </button>
+                </li>
+              );
+            }
+            const c = i.checkIn;
+            const st = checkInStatus(c, refiller?.name, parent.timeZone);
+            const sub = checkInSub(c);
+            const canReply = c.status === 'checked_in' && !c.record?.reply;
+            return (
+              <li key={c.id} className={cls}>
+                <button className="lrow" onClick={() => setCheckId(c.id)} style={canReply ? { paddingBottom: 4 } : undefined}>
+                  <TimeCol date={c.scheduledAt} parentTz={parent.timeZone} caregiverTz={caregiver.timeZone} />
+                  <span style={{ display: 'grid', placeItems: 'center', width: 40 }} aria-hidden>
+                    <Pebble mood={c.status === 'checked_in' || c.status === 'refiller_ok' ? 'happy' : c.status === 'upcoming' || c.status === 'due' || c.status === 'paused' ? 'sleepy' : 'worried'} size={24} label="" />
+                  </span>
+                  <span className="grow">
+                    <span className="lrow-title block">{checkInTitle(c, parent.name, refiller?.name, parent.timeZone)}</span>
+                    {sub && <span className="lrow-sub block">{sub}</span>}
+                  </span>
+                  <span className="lrow-end">
+                    <Status tone={st.tone}>{st.text}</Status>
+                  </span>
+                </button>
+                {canReply && (
+                  <div className="small" style={{ padding: '0 0 10px 128px', display: 'flex', gap: 14 }}>
+                    <button
+                      className="link-btn"
+                      onClick={() => {
+                        deviceService.replyToCheckIn(c.id, 'heart');
+                        toast(`${parent.name} will see your ❤️`);
+                      }}
+                    >
+                      Send ❤️
+                    </button>
+                    <button className="link-btn" onClick={() => setCheckId(c.id)}>
+                      Record voice note
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {!hasPlan(plan, 'phone') && (
+        <div style={{ marginTop: 16 }}>
+          <Locked plan="phone">
+            Get {refiller?.name ?? 'a nearby relative'} and you alerted if {parent.name} misses a check-in, and see each pill taken on camera.
+          </Locked>
+        </div>
+      )}
+
+      {lowMeds.length > 0 && s.alerts.refillReminders && (
+        <ul className="list list--flush" style={{ marginTop: 12 }}>
+          <li>
+            <Link to="/care/refills" className="link-row">
+              <span className="grow">
+                <span className="lrow-title block">
+                  {plan === 'device'
+                    ? `Running low on ${lowMeds.map((m) => m.name).join(' and ')}`
+                    : `Monthly refill due ${fmtDate(deviceService.refillInfo(lowMeds[0]).refillBy, parent.timeZone)}`}
+                </span>
+                <span className="lrow-sub block">{refiller ? `${refiller.name} handles refills.` : 'Invite someone nearby to help with refills.'}</span>
+              </span>
+              <span className="link-btn small">Refills</span>
+            </Link>
+          </li>
+        </ul>
+      )}
+
+      <DoseSheet id={doseId} onClose={() => setDoseId(null)} />
+      <CheckInSheet id={checkId} onClose={() => setCheckId(null)} />
     </main>
   );
 }

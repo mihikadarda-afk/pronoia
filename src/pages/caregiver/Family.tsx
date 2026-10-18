@@ -1,140 +1,148 @@
 import { useState } from 'react';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
-import { PebbleSays } from '../../components/Pebble';
-import { Avatar, ConfirmButton, TopBar, useToast } from '../../components/ui';
+import { AppBar, Avatar, ConfirmButton, PlanBadge, Says, SectionHead, Sheet, Status, useToast } from '../../components/ui';
+import { relTime } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
-import { useAppState } from '../../services/useApp';
+import { useAppState, useNow } from '../../services/useApp';
 import type { Person } from '../../services/types';
 
 const roleLabel = (p: Person) =>
-  p.role === 'parent' ? 'Parent · simple view' : p.role === 'refiller' ? 'Refills · WhatsApp only' : p.isOwner ? 'Caregiver · owner' : 'Caregiver';
+  p.role === 'parent' ? 'Parent' : p.role === 'refiller' ? 'Refills, first to check in' : p.isOwner ? 'Caregiver, owner' : 'Caregiver';
 
 const sees: Record<Person['role'], string> = {
-  caregiver: 'Sees doses, clips to review, refills and alerts.',
-  parent: 'Sees their next pill and can message the family.',
-  refiller: 'Gets refill reminders on WhatsApp. No dose history.',
+  caregiver: 'Sees every dose and check-in, reviews frames, gets alerts.',
+  parent: 'Sees the next pill, taps I took it and I’m okay, and gets your hearts.',
+  refiller: 'Gets refill reminders and missed check-in requests on WhatsApp. No dose history.',
+  station: 'The old phone by the pill box. Shows pills and checks doses.',
 };
 
 export function Family() {
   const s = useAppState();
+  const now = useNow();
   const toast = useToast();
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Person | null>(null);
   const pending = s.people.filter((p) => p.status === 'pending');
-  const active = s.people.filter((p) => p.status === 'active' || p.status === 'invited');
+  const members = s.people.filter((p) => p.status !== 'pending');
 
   return (
     <main className="screen">
-      <TopBar title="Family" back="/care/more" />
+      <AppBar title="Family" right={<PlanBadge plan={s.plan.tier} />} />
 
       {pending.length > 0 && (
         <>
-          <PebbleSays mood="waving" size={80}>
+          <Says mood="waving" size={40}>
             {pending.length === 1 ? `${pending[0].name} wants to join.` : `${pending.length} people want to join.`} Nothing is shared until you say yes.
-          </PebbleSays>
-          {pending.map((p) => (
-            <section key={p.id} className="card card--sage" style={{ marginTop: 12 }}>
-              <div className="row">
-                <Avatar person={p} />
-                <div className="grow">
-                  <strong>{p.name}</strong>
-                  <span className="block small muted">
-                    {p.relation} · wants to join as {p.role === 'refiller' ? 'refill helper' : p.role}
+          </Says>
+          <ul className="list" style={{ marginTop: 12 }}>
+            {pending.map((p) => (
+              <li key={p.id} className="attention">
+                <div className="lrow lrow--icon" style={{ cursor: 'default' }}>
+                  <Avatar person={p} />
+                  <span className="grow">
+                    <span className="lrow-title block">{p.name}</span>
+                    <span className="lrow-sub block">Wants to join as {p.role === 'refiller' ? 'refill helper' : p.role}</span>
+                  </span>
+                  <span className="row" style={{ gap: 8 }}>
+                    <button className="btn btn--secondary btn--small" onClick={() => { deviceService.removePerson(p.id); toast(`Declined ${p.name}`); }}>
+                      Decline
+                    </button>
+                    <button className="btn btn--small" onClick={() => { deviceService.approve(p.id); toast(`${p.name} is in your circle`); }}>
+                      Approve
+                    </button>
                   </span>
                 </div>
-              </div>
-              <div className="btn-row" style={{ marginTop: 12 }}>
-                <button className="btn btn--ghost" onClick={() => { deviceService.removePerson(p.id); toast(`${p.name} declined`); }}>
-                  Decline
-                </button>
-                <button className="btn" onClick={() => { deviceService.approve(p.id); toast(`${p.name} is now in your circle`); }}>
-                  Approve
-                </button>
-              </div>
-            </section>
-          ))}
+              </li>
+            ))}
+          </ul>
         </>
       )}
 
-      <h2 className="section-title">Invite with a code</h2>
+      <SectionHead title="In the circle" />
+      <ul className="list">
+        {members.map((p) => (
+          <li key={p.id}>
+            <button className="lrow lrow--icon" onClick={() => setEditing(p)}>
+              <Avatar person={p} />
+              <span className="grow">
+                <span className="lrow-title block">
+                  {p.name} <span className="muted">· {p.relation}</span>
+                </span>
+                <span className="lrow-sub block">{roleLabel(p)}</span>
+              </span>
+              {p.status === 'invited' ? <Status tone="warn">Phone not linked</Status> : <span className="small muted">{p.city}</span>}
+            </button>
+          </li>
+        ))}
+        {s.plan.tier === 'phone' && (
+          <li className="lrow lrow--icon" style={{ cursor: 'default' }}>
+            <span className="avatar" style={{ width: 40, height: 40 }} aria-hidden>
+              <svg viewBox="0 0 24 24" width={20} height={20}>
+                <rect x={7} y={3} width={10} height={18} rx={2} fill="none" stroke="currentColor" strokeWidth={1.6} />
+                <path d="M11 18 H13" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
+              </svg>
+            </span>
+            <span className="grow">
+              <span className="lrow-title block">Dose station</span>
+              <span className="lrow-sub block">{s.station.linked ? `Last seen ${relTime(s.station.lastSeen, now.getTime())}` : 'Not set up yet'}</span>
+            </span>
+            <Status tone={s.station.linked && s.station.online ? 'good' : 'warn'}>{s.station.linked ? (s.station.online ? 'Online' : 'Offline') : 'Not linked'}</Status>
+          </li>
+        )}
+      </ul>
+
+      <SectionHead title="Invite with the family code" />
       <FamilyCodeCard />
-      <p className="small muted" style={{ margin: '10px 4px 0' }}>
-        One code for everyone. On the other phone, they pick "I'm the parent", "I'm helping with refills" or "I'm family", then type the code.
+      <p className="small muted" style={{ marginTop: 10 }}>
+        One code for everyone. On the other phone, open Pronoia and pick I’m the parent, I’m helping with refills,
+        {s.plan.tier === 'phone' ? ' This is the dose station,' : ''} or I’m family. Codes work once and expire after 24 hours.
       </p>
 
-      <h2 className="section-title">In the circle</h2>
-      {active.map((p) => (
-        <section key={p.id} className="card">
-          <div className="row">
-            <Avatar person={p} />
-            <div className="grow">
-              <strong>{p.name}</strong>
-              <span className="small muted"> · {p.relation}</span>
-              <span className="block small" style={{ fontWeight: 700 }}>{roleLabel(p)}</span>
-              {p.status === 'invited' && (
-                <span className="chip chip--unconfirmed" style={{ marginTop: 4 }}>
-                  <span className="chip-dot" />
-                  Phone not linked yet: share the code
-                </span>
-              )}
-            </div>
-            {!p.isOwner && p.status !== 'invited' && (
-              <ConfirmButton
-                className="btn btn--ghost btn--small"
-                confirmLabel="Tap to confirm"
-                onConfirm={() => {
-                  deviceService.removePerson(p.id);
-                  toast(`${p.name} removed`);
-                }}
-              >
-                Remove
-              </ConfirmButton>
-            )}
-          </div>
-          <p className="small muted" style={{ margin: '8px 0 0' }}>
-            {sees[p.role]} {p.whatsapp ? `WhatsApp ${p.whatsapp}.` : 'No WhatsApp number yet.'}
-          </p>
-          {editing === p.id ? (
-            <PersonEditor person={p} onDone={() => setEditing(null)} />
-          ) : (
-            <button className="link-btn small" onClick={() => setEditing(p.id)}>
-              Edit details
-            </button>
-          )}
-        </section>
-      ))}
+      <Sheet open={!!editing} onClose={() => setEditing(null)} label="Edit person" title={editing && <h2 style={{ fontSize: 18 }}>{editing.name}</h2>}>
+        {editing && <PersonEditor person={editing} onDone={() => setEditing(null)} />}
+      </Sheet>
     </main>
   );
 }
 
 function PersonEditor({ person, onDone }: { person: Person; onDone: () => void }) {
+  const toast = useToast();
   const [d, setD] = useState({ name: person.name, relation: person.relation, whatsapp: person.whatsapp, city: person.city });
   const field = (k: keyof typeof d, label: string, type = 'text') => (
     <label className="field">
       <span>{label}</span>
-      <input id={`edit-${person.id}-${k}`} className="input" type={type} value={d[k]} onChange={(e) => setD({ ...d, [k]: e.target.value })} />
+      <input className="input" type={type} value={d[k]} onChange={(e) => setD({ ...d, [k]: e.target.value })} />
     </label>
   );
   return (
     <form
-      style={{ marginTop: 12 }}
       onSubmit={(e) => {
         e.preventDefault();
         deviceService.updatePerson(person.id, d);
         onDone();
       }}
     >
+      <p className="small muted">{sees[person.role]}</p>
       {field('name', 'Name')}
       {field('relation', 'Relation')}
       {field('whatsapp', 'WhatsApp number', 'tel')}
       {field('city', 'City')}
-      <div className="btn-row">
-        <button type="button" className="btn btn--ghost" onClick={onDone}>
-          Cancel
-        </button>
-        <button className="btn" disabled={!d.name.trim()}>
-          Save
-        </button>
-      </div>
+      <button className="btn btn--block" disabled={!d.name.trim()}>
+        Save
+      </button>
+      {!person.isOwner && person.status !== 'invited' && (
+        <ConfirmButton
+          className="btn btn--danger btn--block"
+          style={{ marginTop: 10 }}
+          confirmLabel="Tap again to remove"
+          onConfirm={() => {
+            deviceService.removePerson(person.id);
+            toast(`${person.name} removed`);
+            onDone();
+          }}
+        >
+          Remove from the circle
+        </ConfirmButton>
+      )}
     </form>
   );
 }

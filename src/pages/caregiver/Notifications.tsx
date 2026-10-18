@@ -1,5 +1,4 @@
-import { PebbleSays } from '../../components/Pebble';
-import { Placeholder, Toggle, TopBar, useToast } from '../../components/ui';
+import { AppBar, Placeholder, Says, SectionHead, Toggle, useToast } from '../../components/ui';
 import { cityShort, hhmmLabel } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { CHANNELS, EVENTS, PRESETS, matchingPreset, type EventInfo } from '../../services/notifications';
@@ -45,20 +44,20 @@ export function Notifications() {
 
   return (
     <main className="screen">
-      <TopBar title="Notifications" back="/care/more" />
-      <PebbleSays mood="happy" size={84}>
+      <AppBar title="Notifications" back />
+      <Says mood="happy" size={40}>
         You'll hear about {heard.length} of {EVENTS.length} things.{' '}
         {wakers.length
           ? `Only ${listOf(wakers.map((e) => e.short))} can wake you at night.`
           : 'Nothing will wake you at night.'}
-      </PebbleSays>
+      </Says>
 
-      <h2 className="section-title">How to reach you</h2>
-      <section className="card">
+      <SectionHead title="How to reach you" />
+      <section>
         {CHANNELS.map((c) => (
           <div key={c.id}>
             <Toggle
-              label={`${c.icon}  ${c.label}`}
+              label={c.label}
               hint={c.id === 'whatsapp' ? caregiver.whatsapp : c.hint}
               checked={n.channels[c.id]}
               onChange={(v) => toggleChannel(c.id, v)}
@@ -90,7 +89,7 @@ export function Notifications() {
           </div>
         ))}
         <button
-          className="btn btn--soft btn--block"
+          className="btn btn--secondary btn--block"
           style={{ marginTop: 8 }}
           onClick={async () => {
             const sent = await deviceService.sendTestNotification();
@@ -101,7 +100,7 @@ export function Notifications() {
         </button>
       </section>
 
-      <h2 className="section-title">Start from</h2>
+      <SectionHead title="Start from" />
       <div className="preset-row" role="group" aria-label="Notification presets">
         {PRESETS.map((p) => (
           <button key={p.id} className="preset" aria-pressed={preset === p.id} onClick={() => deviceService.applyNotificationPreset(p.id)}>
@@ -114,21 +113,21 @@ export function Notifications() {
 
       {GROUPS.map((g) => (
         <section key={g}>
-          <h2 className="section-title">{g}</h2>
-          <div className="card">
-            <ul className="list-plain">
+          <SectionHead title={g === 'Pills and dispenser' ? 'Pills and station' : g} />
+          <div>
+            <ul className="list">
               {EVENTS.filter((e) => e.group === g).map((e) => {
                 const pref = n.events[e.id];
                 const on = live(e.id).length > 0;
                 return (
-                  <li key={e.id}>
+                  <li key={e.id} style={{ padding: '12px 0' }}>
                     <div className="row-between row--top">
                       <span className="grow">
-                        <strong>{e.title}</strong>
+                        <span className="lrow-title block">{e.title}</span>
                         <span className="block small muted">{e.hint}</span>
                       </span>
-                      {!on && <span className="chip chip--upcoming">Off</span>}
-                      {e.required && <span className="chip chip--missed">Always on</span>}
+                      {!on && <span className="small muted">Off</span>}
+                      {e.required && <span className="small muted">Always on</span>}
                     </div>
                     <div className="ch-chips" role="group" aria-label={`Send "${e.title}" by`}>
                       {e.allowed.filter((c) => n.channels[c]).map((c) => {
@@ -146,13 +145,12 @@ export function Notifications() {
                       })}
                     </div>
                     {e.id === 'dailyDigest' && on && (
-                      <label className="row small" style={{ marginTop: 10, fontWeight: 700 }}>
+                      <label className="row small" style={{ marginTop: 10 }}>
                         Send at
                         <input
                           id="digest-time"
-                          className="input"
+                          className="input input--inline"
                           type="time"
-                          style={{ width: 'auto', minHeight: 40 }}
                           value={n.digestTime}
                           onChange={(ev) => deviceService.updateNotifications({ digestTime: ev.target.value })}
                         />
@@ -180,7 +178,7 @@ export function Notifications() {
         </section>
       ))}
 
-      <Placeholder>WhatsApp, email, SMS, calls and app notifications are all mocked. Tests appear under More → Messages.</Placeholder>
+      <Placeholder>WhatsApp, email, SMS, calls and app notifications are all mocked. Tests appear under Settings → Messages.</Placeholder>
     </main>
   );
 }

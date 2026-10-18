@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { Lang } from '../services/types';
 
-export type SessionRole = 'caregiver' | 'parent';
+export type SessionRole = 'caregiver' | 'parent' | 'station';
 
 interface Session {
   role: SessionRole | null;

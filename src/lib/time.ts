@@ -107,3 +107,23 @@ export function countdown(toMs: number, nowMs: number): string {
   if (m > 0) return `${m} min`;
   return `${s} s`;
 }
+
+const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/** Is the wall time `hhmm` inside [start, end), where the window may wrap past midnight? */
+export function inWindow(hhmm: string, start: string, end: string): boolean {
+  const t = toMin(hhmm);
+  const a = toMin(start);
+  const b = toMin(end);
+  return a <= b ? t >= a && t < b : t >= a || t < b;
+}
+
+/** The wall time in `timeZone` as "HH:MM". */
+export function wallTime(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
+}
+
+/** "1pm", "8:30am": the short form used in WhatsApp messages. */
+export function shortTime(hhmm: string): string {
+  return hhmmLabel(hhmm).replace(':00', '').replace(' ', '').toLowerCase();
+}

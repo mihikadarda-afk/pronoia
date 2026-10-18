@@ -9,26 +9,27 @@ export function ParentMenu() {
   const nav = useNavigate();
   const session = useSession();
   return (
-    <main className="screen screen--parent stack">
-      <h1 className="parent-big" style={{ paddingTop: 16 }}>{t.language}</h1>
-      <div className="lang-pick">
+    <main className="parent">
+      <h1 style={{ paddingTop: 20 }}>{t.language}</h1>
+      <div className="lang-pick" style={{ marginTop: 14 }}>
         {LANGS.map((l) => (
           <button key={l} aria-pressed={session.lang === l} onClick={() => session.setLang(l)} lang={l}>
             {langName(l)}
           </button>
         ))}
       </div>
-      <hr className="divider" />
-      <button className="btn btn--huge btn--soft" onClick={() => nav('/parent/privacy')}>
-        📷 {t.privacy}
-      </button>
-      <button className="btn btn--huge" onClick={() => nav('/parent')}>
-        {t.back}
-      </button>
+      <div className="stack" style={{ marginTop: 28 }}>
+        <button className="p-btn p-btn--secondary" onClick={() => nav('/parent/privacy')}>
+          {t.privacy}
+        </button>
+        <button className="p-btn" onClick={() => nav('/parent')}>
+          {t.back}
+        </button>
+      </div>
       {isDemo ? (
         <button
-          className="link-btn"
-          style={{ width: '100%', fontSize: 18 }}
+          className="p-link"
+          style={{ marginTop: 16 }}
           onClick={() => {
             session.signOut();
             nav('/');
@@ -38,8 +39,8 @@ export function ParentMenu() {
         </button>
       ) : (
         <ConfirmButton
-          className="link-btn"
-          style={{ width: '100%', fontSize: 18 }}
+          className="p-link"
+          style={{ marginTop: 16 }}
           confirmLabel={t.unlinkConfirm}
           onConfirm={() => {
             deviceService.signOut();

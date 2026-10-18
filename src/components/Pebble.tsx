@@ -150,7 +150,7 @@ export function Pebble({ mood = 'happy', size = 120, className = '', label }: Pr
         </g>
       )}
       {mood === 'sleepy' && (
-        <g className="pebble-zzz" fill={SAGE_DARK} fontFamily="Nunito, sans-serif" fontWeight={800}>
+        <g className="pebble-zzz" fill={SAGE_DARK} fontFamily="Inter, system-ui, sans-serif" fontWeight={800}>
           <text x={150} y={42} fontSize={22}>z</text>
           <text x={166} y={24} fontSize={16}>z</text>
         </g>
@@ -159,7 +159,7 @@ export function Pebble({ mood = 'happy', size = 120, className = '', label }: Pr
         <g fill={CREAM} stroke={INK} strokeWidth={3} className="pebble-think">
           <circle cx={158} cy={56} r={5} />
           <circle cx={170} cy={38} r={8} />
-          <text x={164} y={44} fontSize={13} fontWeight={800} fill={INK} stroke="none" fontFamily="Nunito, sans-serif">?</text>
+          <text x={164} y={44} fontSize={13} fontWeight={800} fill={INK} stroke="none" fontFamily="Inter, system-ui, sans-serif">?</text>
         </g>
       )}
 
@@ -210,7 +210,7 @@ export function Pebble({ mood = 'happy', size = 120, className = '', label }: Pr
   );
 }
 
-/** Pebble with a speech bubble. */
+/** Pebble with a speech bubble (large, for the parent side and onboarding). */
 export function PebbleSays({
   mood = 'happy',
   size = 96,
@@ -223,7 +223,7 @@ export function PebbleSays({
   align?: 'row' | 'stack';
 }) {
   return (
-    <div className={`pebble-says pebble-says--${align}`}>
+    <div className={`says${align === 'stack' ? ' says--stack' : ''}`}>
       <Pebble mood={mood} size={size} />
       <div className="bubble" role="status">
         {children}

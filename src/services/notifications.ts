@@ -1,11 +1,11 @@
 import type { EventPref, NotifyChannel, NotifyEvent } from './types';
 
 export const CHANNELS: { id: NotifyChannel; label: string; icon: string; hint: string }[] = [
-  { id: 'whatsapp', label: 'WhatsApp', icon: '💬', hint: 'Messages to your WhatsApp number' },
-  { id: 'push', label: 'App', icon: '🔔', hint: 'Notifications from the Pronoia app' },
-  { id: 'email', label: 'Email', icon: '✉️', hint: 'Good for summaries and records' },
-  { id: 'sms', label: 'SMS', icon: '📱', hint: 'Plain text messages, no data needed' },
-  { id: 'call', label: 'Call', icon: '📞', hint: 'An automated phone call, for emergencies only' },
+  { id: 'whatsapp', label: 'WhatsApp', icon: '', hint: 'Messages to your WhatsApp number' },
+  { id: 'push', label: 'App', icon: '', hint: 'Notifications from the Pronoia app' },
+  { id: 'email', label: 'Email', icon: '', hint: 'Good for summaries and records' },
+  { id: 'sms', label: 'SMS', icon: '', hint: 'Plain text messages, no data needed' },
+  { id: 'call', label: 'Call', icon: '', hint: 'An automated phone call, for emergencies only' },
 ];
 
 export interface EventInfo {
@@ -29,12 +29,13 @@ const NO_CALL: NotifyChannel[] = ['whatsapp', 'push', 'email', 'sms'];
 export const EVENTS: EventInfo[] = [
   { id: 'help', short: '"I need help"', group: 'Urgent', title: '"I need help" pressed', hint: 'Your parent asked for help from the app.', allowed: ALL, canWake: true, required: true },
   { id: 'missed', short: 'missed doses', group: 'Urgent', title: 'Missed dose', hint: 'Not picked up after the reminder delay.', allowed: ALL, canWake: true },
-  { id: 'review', short: 'clips to review', group: 'Doses', title: 'Clip needs your review', hint: "The AI couldn't see the pill swallowed.", allowed: NO_CALL, canWake: false },
+  { id: 'checkin', short: 'missed check-ins', group: 'Urgent', title: 'Missed check-in', hint: 'Only after the refiller was asked and hasn\'t replied OK.', allowed: ALL, canWake: true },
+  { id: 'review', short: 'doses to review', group: 'Doses', title: 'Dose needs your review', hint: "The AI check wasn't sure the pill was swallowed.", allowed: NO_CALL, canWake: false },
   { id: 'late', short: 'late doses', group: 'Doses', title: 'Dose taken late', hint: 'Taken, but well after its time.', allowed: NO_CALL, canWake: false },
-  { id: 'taken', short: 'every dose', group: 'Doses', title: 'Every dose taken', hint: 'A note each time a swallow is confirmed.', allowed: NO_CALL, canWake: false },
+  { id: 'taken', short: 'every dose', group: 'Doses', title: 'Every dose taken', hint: 'The WhatsApp with the time and confidence score.', allowed: NO_CALL, canWake: false },
   { id: 'refill', short: 'refill reminders', group: 'Pills and dispenser', title: 'Refill reminders', hint: 'A slot will run out soon.', allowed: NO_CALL, canWake: false },
   { id: 'slotProblem', short: 'slot problems', group: 'Pills and dispenser', title: 'Slot stuck or empty', hint: "A pill can't be dispensed.", allowed: NO_CALL, canWake: true },
-  { id: 'offline', short: 'the dispenser going offline', group: 'Pills and dispenser', title: 'Dispenser offline', hint: 'No connection for more than an hour.', allowed: NO_CALL, canWake: false },
+  { id: 'offline', short: 'the station going offline', group: 'Pills and dispenser', title: 'Dose station or dispenser offline', hint: 'No connection for more than an hour, or a low battery.', allowed: NO_CALL, canWake: false },
   { id: 'parentMessage', short: 'messages from your parent', group: 'Family', title: 'Messages from your parent', hint: '"I\'m okay" and "Call me".', allowed: NO_CALL, canWake: true },
   { id: 'joinRequest', short: 'join requests', group: 'Family', title: 'Someone asks to join', hint: 'Waiting for your approval.', allowed: NO_CALL, canWake: false },
   { id: 'dailyDigest', short: 'the morning digest', group: 'Summaries', title: 'Morning digest', hint: "Yesterday's doses in one short message.", allowed: ['whatsapp', 'push', 'email'], canWake: false },
@@ -57,6 +58,7 @@ export function presetEvents(preset: Preset): Record<NotifyEvent, EventPref> {
     return {
       help: p(['whatsapp', 'push', 'call'], true),
       missed: p(['whatsapp', 'push'], true),
+      checkin: p(['whatsapp', 'push'], true),
       review: p([]),
       late: p([]),
       taken: p([]),
@@ -73,6 +75,7 @@ export function presetEvents(preset: Preset): Record<NotifyEvent, EventPref> {
     return {
       help: p(['whatsapp', 'push', 'call'], true),
       missed: p(['whatsapp', 'push'], true),
+      checkin: p(['whatsapp', 'push'], true),
       review: p(['whatsapp', 'push']),
       late: p(['whatsapp', 'push']),
       taken: p(['push']),
@@ -88,9 +91,10 @@ export function presetEvents(preset: Preset): Record<NotifyEvent, EventPref> {
   return {
     help: p(['whatsapp', 'push', 'call'], true),
     missed: p(['whatsapp', 'push'], true),
-    review: p(['push']),
-    late: p([]),
-    taken: p([]),
+    checkin: p(['whatsapp', 'push'], true),
+    review: p(['whatsapp', 'push']),
+    late: p(['whatsapp']),
+    taken: p(['whatsapp']),
     refill: p(['whatsapp']),
     slotProblem: p(['whatsapp', 'push']),
     offline: p(['push']),
