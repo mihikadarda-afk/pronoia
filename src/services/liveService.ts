@@ -29,7 +29,6 @@ import { setAiTokenSource } from './aiCheck';
 import { zonedDate } from '../lib/time';
 
 const ONLINE_WITHIN_MS = 10 * 60_000;
-const PENDING_KEY = 'pronoia.pendingCaregiver';
 
 // Rows as they come from the database.
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -271,18 +270,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     }
     this.circleId = me.circle_id;
     this.watch();
-    if (me.status !== 'active') {
-      let caregiverName: string | undefined;
-      try {
-        caregiverName = localStorage.getItem(PENDING_KEY) ?? undefined;
-      } catch {
-        /* ignore */
-      }
-      this.setAuth({ status: 'pending', role: me.role, caregiverName, ...base });
-      return;
-    }
-    if (me.role !== 'caregiver' && me.role !== 'parent' && me.role !== 'station') {
-      // Refill helpers are no longer part of the app.
+    if (me.status !== 'active' || (me.role !== 'caregiver' && me.role !== 'parent' && me.role !== 'station')) {
+      // Removed from the circle (or a refill helper, who are no longer part of the app).
       this.unwatch();
       this.setAuth({ status: 'signed-out' });
       return;
@@ -638,21 +627,11 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       const personId = await this.call<string>(
         this.sb.rpc('join_with_code', { p_code: normalizeCode(input), p_role: role, p_name: name }),
       );
-      try {
-        localStorage.setItem(PENDING_KEY, check.caregiver.name);
-      } catch {
-        /* ignore */
-      }
       await this.reload();
       return { ok: true, personId };
     } catch (e) {
       return { ok: false, reason: message(e) };
     }
-  }
-
-  approve(personId: string) {
-    this.patch({ people: this.state.people.map((p) => (p.id === personId ? { ...p, status: 'active' } : p)) });
-    this.write(this.sb.rpc('approve_member', { p_member: personId }));
   }
 
   removePerson(personId: string) {

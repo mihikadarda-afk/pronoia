@@ -31,7 +31,7 @@ export function Settings() {
         <Avatar person={caregiver} size={44} />
         <div className="grow">
           <div className="strong">{caregiver.name}</div>
-          <div className="small muted">{auth.email ?? caregiver.whatsapp} · {s.circleName || `${parent.name}’s circle`}</div>
+          <div className="small muted">{auth.email ? `${auth.email} · ` : ''}{s.circleName || `${parent.name}’s circle`}</div>
         </div>
       </div>
 

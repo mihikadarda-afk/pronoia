@@ -10,7 +10,7 @@ import { useAuth } from '../services/useApp';
 import type { Person, Role } from '../services/types';
 import { PrivacyPromise } from './parent/ParentPrivacy';
 
-type Step = 'role' | 'code' | 'confirm' | 'email' | 'privacy' | 'done';
+type Step = 'role' | 'code' | 'confirm' | 'email' | 'privacy';
 
 /** The code-linking flow: the parent's phone, the dose station and extra caregivers. */
 export function Join() {
@@ -66,7 +66,8 @@ export function Join() {
       session.signIn('station');
       nav('/station', { replace: true });
     } else {
-      setStep('done');
+      // Another caregiver: the family code is enough, straight to today.
+      nav('/', { replace: true });
     }
   };
 
@@ -199,21 +200,6 @@ export function Join() {
         </div>
       )}
 
-      {step === 'done' && caregiver && (
-        <div className="stack">
-          <div className="p-hero" style={{ paddingTop: 24 }}>
-            <PebbleSays mood="happy" size={120} align="stack">
-              {t.waiting(caregiver.name)}
-            </PebbleSays>
-            <p style={{ fontSize: 18 }}>
-              Once {caregiver.name} approves, you’ll see every dose and check-in too.
-            </p>
-          </div>
-          <button className="p-btn" onClick={() => nav('/')}>
-            {t.continue}
-          </button>
-        </div>
-      )}
     </main>
   );
 }

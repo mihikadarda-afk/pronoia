@@ -35,7 +35,7 @@ export interface Person {
   name: string;
   role: Role;
   relation: string; // "Granddaughter", "Grandfather", "Cousin"
-  /** Phone number, for "Call Nanaji". (The field name is from when alerts went by WhatsApp.) */
+  /** Not asked for any more: alerts are notifications in the app. (Kept for older families' data.) */
   whatsapp: string;
   city: string;
   timeZone: string;

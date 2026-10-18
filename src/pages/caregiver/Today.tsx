@@ -61,7 +61,6 @@ export function Today() {
   const taken = doses.filter((d) => isDoneDose(d.status)).length;
   const last = deviceService.lastCheckIn();
   const line = pebbleLine(items, s, parent);
-  const pending = s.people.filter((p) => p.status === 'pending');
   const helpNotices = s.notices.filter((n) => n.kind === 'help' && !n.read);
   const plan = s.plan.tier;
   const lowMeds = s.medicines.filter((m) => deviceService.slotHealth(m) !== 'ok');
@@ -99,7 +98,6 @@ export function Today() {
       {helpNotices.map((n) => (
         <section key={n.id} className="alert-banner" role="alert" style={{ marginBottom: 12 }}>
           <strong>{n.text}</strong>
-          {parent.whatsapp && <span className="block small">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></span>}
           <button className="btn btn--small" style={{ marginTop: 10 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
             I’m on it
           </button>
@@ -137,20 +135,6 @@ export function Today() {
           </Link>
         </div>
       </section>
-
-      {pending.length > 0 && (
-        <ul className="list list--flush" style={{ marginTop: 8 }}>
-          <li>
-            <Link to="/care/family" className="link-row">
-              <span className="grow">
-                <span className="lrow-title block">{pending.map((p) => p.name).join(', ')} asked to join</span>
-                <span className="lrow-sub block">Nothing is shared until you approve.</span>
-              </span>
-              <span className="link-btn small">Review</span>
-            </Link>
-          </li>
-        </ul>
-      )}
 
       <div className="section-head">
         <h2>{parent.name}’s day</h2>

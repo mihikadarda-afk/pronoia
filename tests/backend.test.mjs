@@ -62,14 +62,11 @@ test('a family circle works end to end', async (t) => {
     const again = await ok(client().rpc('check_code', { p_code: code.code }));
     assert.equal(again.ok, false, 'codes work once');
 
-    const pendingView = await ok(nanaji.from('members').select('name, status'));
-    assert.deepEqual(pendingView, [{ name: 'Nanaji', status: 'pending' }], 'pending parent sees only their own row');
 
     const notices = await ok(mihika.from('notices').select('kind, text').eq('circle_id', circleId));
     assert.ok(notices.some((n) => n.kind === 'join' && n.text.startsWith('Nanaji joined')));
 
-    const parentRow = (await ok(mihika.from('members').select('id').eq('role', 'parent').eq('circle_id', circleId)))[0];
-    await ok(mihika.rpc('approve_member', { p_member: parentRow.id }));
+    // The family code is enough: no approval step.
     const people = await ok(nanaji.from('members').select('name').order('name'));
     assert.deepEqual(people.map((p) => p.name), ['Mihika', 'Nanaji']);
   });
