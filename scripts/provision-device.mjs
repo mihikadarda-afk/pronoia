@@ -24,4 +24,4 @@ if (error) {
   process.exit(1);
 }
 console.log(`Device code (print on the label): ${code}`);
-console.log(`Device secret (flash into firmware/pronoia-dispenser/config.h, then discard): ${secret}`);
+console.log(`Device secret (put it in device/raspberry-pi/config.json on the Pi, then discard): ${secret}`);

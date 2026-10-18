@@ -4,6 +4,6 @@
   "start_url": "./",
   "display": "standalone",
   "background_color": "#F4EFE3",
-  "theme_color": "#A8BFA0",
+  "theme_color": "#F4EFE3",
   "icons": [{ "src": "pebble-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
 }

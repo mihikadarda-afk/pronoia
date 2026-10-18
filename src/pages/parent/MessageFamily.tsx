@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Pebble, PebbleSays } from '../../components/Pebble';
-import { Placeholder } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { usePeople } from '../../services/useApp';
@@ -10,42 +9,45 @@ export function MessageFamily() {
   const t = useT();
   const nav = useNavigate();
   const { caregiver } = usePeople();
-  const [sent, setSent] = useState<null | 'ok' | 'call'>(null);
+  const [sent, setSent] = useState(false);
 
   if (sent) {
     return (
-      <main className="screen screen--parent stack">
-        <div className="parent-hero" style={{ paddingTop: 40 }}>
-          <PebbleSays mood="happy" size={150} align="stack">
-            <span style={{ fontSize: 24 }}>{t.sentTo(caregiver.name)}</span>
+      <main className="parent">
+        <div className="p-hero" style={{ paddingTop: 56 }}>
+          <PebbleSays mood="happy" size={140} align="stack">
+            {t.sentTo(caregiver.name)}
           </PebbleSays>
         </div>
-        <button className="btn btn--huge" onClick={() => nav('/parent')}>{t.backHome}</button>
-        <Placeholder>WhatsApp sending is mocked. The caregiver sees it under More → Messages.</Placeholder>
+        <button className="p-btn" style={{ marginTop: 32 }} onClick={() => nav('/parent')}>
+          {t.backHome}
+        </button>
       </main>
     );
   }
 
   const send = (kind: 'ok' | 'call') => {
     deviceService.parentMessage(kind);
-    setSent(kind);
+    setSent(true);
   };
 
   return (
-    <main className="screen screen--parent stack">
-      <div className="parent-hero" style={{ paddingTop: 30 }}>
-        <Pebble mood="waving" size={130} />
-        <h1 className="parent-big">{t.messageFamily}</h1>
+    <main className="parent">
+      <div className="p-hero" style={{ paddingTop: 32 }}>
+        <Pebble mood="waving" size={110} />
+        <h1>{t.messageFamily}</h1>
       </div>
-      <button className="btn btn--huge" style={{ minHeight: 110, fontSize: 30 }} onClick={() => send('ok')}>
-        💚 {t.imOkay}
-      </button>
-      <button className="btn btn--huge btn--blush" style={{ minHeight: 110, fontSize: 30 }} onClick={() => send('call')}>
-        📞 {t.callMe}
-      </button>
-      <button className="link-btn" style={{ fontSize: 20, width: '100%' }} onClick={() => nav('/parent')}>
-        {t.back}
-      </button>
+      <div className="stack" style={{ marginTop: 28 }}>
+        <button className="p-btn p-btn--huge" onClick={() => send('ok')}>
+          {t.imOkay}
+        </button>
+        <button className="p-btn p-btn--secondary p-btn--huge" onClick={() => send('call')}>
+          {t.callMe}
+        </button>
+        <button className="p-link" onClick={() => nav('/parent')}>
+          {t.back}
+        </button>
+      </div>
     </main>
   );
 }

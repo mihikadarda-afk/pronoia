@@ -4,3 +4,4 @@ dist
 .DS_Store
 .env.local
 firmware/pronoia-dispenser/config.h
+__pycache__/

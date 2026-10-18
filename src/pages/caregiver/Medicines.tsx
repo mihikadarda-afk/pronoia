@@ -1,103 +1,132 @@
 import { Link } from 'react-router-dom';
-import { PebbleSays } from '../../components/Pebble';
-import { HealthChip, PillIcon, TopBar } from '../../components/ui';
+import { AppBar, Chevron, Locked, PillPhoto, Says, SectionHead, Status } from '../../components/ui';
 import { fmtDate, hhmmLabel } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
+import type { SlotHealth } from '../../services/types';
+
+const healthText: Record<SlotHealth, [string, 'good' | 'warn' | 'bad' | 'quiet']> = {
+  ok: ['Good', 'good'],
+  low: ['Refill soon', 'warn'],
+  empty: ['Empty', 'bad'],
+  stuck: ['Stuck', 'bad'],
+  unused: ['Not in use', 'quiet'],
+};
 
 export function Medicines() {
   const s = useAppState();
-  const { parent } = usePeople();
-  const slots = [1, 2, 3, 4, 5].map((n) => s.medicines.find((m) => m.slot === n));
+  const { parent, refiller } = usePeople();
+  const device = s.plan.tier === 'device';
+  const free = [1, 2, 3, 4, 5].find((n) => !s.medicines.some((m) => m.slot === n));
   const problems = s.medicines.filter((m) => ['empty', 'stuck'].includes(deviceService.slotHealth(m)));
-  const low = s.medicines.filter((m) => deviceService.slotHealth(m) === 'low');
+  const next = [...s.medicines].sort((a, b) => deviceService.refillInfo(a).refillBy.getTime() - deviceService.refillInfo(b).refillBy.getTime())[0];
 
   return (
     <main className="screen">
-      <TopBar title="Medicines and slots" />
-
-      <div className="dispenser" aria-label="Dispenser slots">
-        {slots.map((m, i) => {
-          const health = deviceService.slotHealth(m);
-          const pct = m ? Math.round((m.pillsLeft / m.capacity) * 100) : 0;
-          return (
-            <Link key={i} to={`/care/meds/${i + 1}`} className={`dispenser-slot dispenser-slot--${health}`} aria-label={`Slot ${i + 1}: ${m ? m.name : 'empty'}`}>
-              <span>{i + 1}</span>
-              {m ? <PillIcon med={m} size={34} /> : <span style={{ fontSize: 22 }}>+</span>}
-              {m ? (
-                <span className={`fill-bar${health !== 'ok' ? ' fill-bar--low' : ''}`}>
-                  <span style={{ width: `${pct}%` }} />
-                </span>
-              ) : (
-                <span className="tiny">Add</span>
-              )}
+      <AppBar
+        title="Medicines"
+        right={
+          free ? (
+            <Link to={`/care/meds/${free}`} className="btn btn--secondary btn--small">
+              Add
             </Link>
-          );
-        })}
-      </div>
+          ) : undefined
+        }
+      />
 
-      {problems.map((m) => (
-        <div key={m.slot} className="card card--blush">
-          <PebbleSays mood="worried" size={64}>
-            {deviceService.slotHealth(m) === 'stuck'
-              ? `Slot ${m.slot} seems stuck. Ask someone at home to check it.`
-              : `Slot ${m.slot} is empty. ${m.name} can't be dispensed until it's refilled.`}
-          </PebbleSays>
-        </div>
-      ))}
-      {problems.length === 0 && low.length > 0 && (
-        <PebbleSays mood="thinking" size={72}>
-          Slot {low.map((m) => m.slot).join(' and ')} {low.length > 1 ? 'are' : 'is'} running low. I'll remind the refiller ahead of time.
-        </PebbleSays>
+      {device && (
+        <>
+          <div className="slots" aria-label="Dispenser slots" style={{ marginTop: 4 }}>
+            {[1, 2, 3, 4, 5].map((n) => {
+              const m = s.medicines.find((x) => x.slot === n);
+              const h = deviceService.slotHealth(m);
+              const pct = m ? Math.round((m.pillsLeft / m.capacity) * 100) : 0;
+              return (
+                <Link key={n} to={`/care/meds/${n}`} className={`slot${m ? '' : ' slot--empty-slot'}`} aria-label={`Slot ${n}: ${m ? `${m.name}, ${m.pillsLeft} left` : 'empty'}`}>
+                  <span className="tiny faint">{n}</span>
+                  {m ? <PillPhoto med={m} /> : <span className="slot-ph" />}
+                  {m ? (
+                    <>
+                      <span className={`meter${h === 'low' ? ' meter--warn' : h === 'ok' ? '' : ' meter--bad'}`}>
+                        <i style={{ width: `${pct}%` }} />
+                      </span>
+                      <span className="tiny num">{m.stuck ? 'Stuck' : `${m.pillsLeft} left`}</span>
+                    </>
+                  ) : (
+                    <span className="tiny">Add</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+          {problems.map((m) => (
+            <div key={m.slot} className="alert-banner" style={{ marginTop: 10 }}>
+              <strong>
+                Slot {m.slot} ({m.name}) {m.stuck ? 'seems stuck' : 'is empty'}.
+              </strong>
+              <span className="block small">
+                {m.stuck ? `Ask ${refiller?.name ?? 'someone nearby'} to open the lid and free the pill.` : `It needs a refill before the next dose.`}
+              </span>
+            </div>
+          ))}
+        </>
       )}
 
-      <h2 className="section-title">Slots</h2>
-      {slots.map((m, i) => {
-        const n = i + 1;
-        if (!m) {
-          return (
-            <Link key={n} to={`/care/meds/${n}`} className="card card-link row" style={{ opacity: 0.8 }}>
-              <span className="pill-icon" style={{ width: 44, height: 44, fontSize: 22 }} aria-hidden>+</span>
-              <span className="grow">
-                <strong>Slot {n} is free</strong>
-                <span className="block small muted">Add a medicine</span>
-              </span>
-            </Link>
-          );
-        }
-        const info = deviceService.refillInfo(m);
-        return (
-          <Link key={n} to={`/care/meds/${n}`} className="card card-link">
-            <div className="row row--top">
-              <PillIcon med={m} size={56} />
-              <div className="grow">
-                <div className="row-between">
-                  <h3>
-                    Slot {n} · {m.name}
-                  </h3>
-                </div>
-                <div className="small muted" style={{ fontWeight: 700 }}>
-                  {m.strength} · {m.purpose}
-                  {m.withFood ? ` · ${m.withFood}` : ''}
-                </div>
-                <div className="time-chips" style={{ marginTop: 8 }}>
-                  {m.times.map((t) => (
-                    <span key={t} className="chip chip--upcoming">{hhmmLabel(t)}</span>
-                  ))}
-                </div>
-                <div className="row-between small" style={{ marginTop: 10 }}>
-                  <span>
-                    <strong>{m.pillsLeft}</strong> pills left · about {info.daysLeft} days
+      <SectionHead title={device ? 'In the dispenser' : `${parent.name}’s medicines`} />
+      {s.medicines.length === 0 ? (
+        <Says mood="waving">No medicines yet. Add the first one with a photo of the pill, so {parent.name} knows exactly which one to take.</Says>
+      ) : (
+        <ul className="list">
+          {s.medicines.map((m) => {
+            const info = deviceService.refillInfo(m);
+            const [label, tone] = healthText[deviceService.slotHealth(m)];
+            return (
+              <li key={m.slot}>
+                <Link to={`/care/meds/${m.slot}`} className="lrow lrow--icon">
+                  <PillPhoto med={m} />
+                  <span className="grow">
+                    <span className="lrow-title block">
+                      {m.name} {m.strength}
+                    </span>
+                    <span className="lrow-sub block">
+                      {m.purpose}
+                      {m.withFood ? ` · ${m.withFood.toLowerCase()}` : ''}
+                    </span>
+                    <span className="lrow-sub block num">{m.times.map(hhmmLabel).join(' · ')}</span>
                   </span>
-                  <HealthChip health={deviceService.slotHealth(m)} />
-                </div>
-                <div className="small muted">Refill by {fmtDate(info.refillBy, parent.timeZone)}</div>
-              </div>
-            </div>
-          </Link>
-        );
-      })}
-      <p className="small muted center">Times are {parent.name}'s local time in {parent.city}.</p>
+                  <span className="lrow-end">
+                    {device ? <Status tone={tone}>{label}</Status> : info.needsRefill ? <Status tone="warn">Refill soon</Status> : null}
+                    {device && <span className="conf">{m.pillsLeft} left</span>}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {next && (
+        <ul className="list list--flush" style={{ marginTop: 8 }}>
+          <li>
+            <Link to="/care/refills" className="link-row">
+              <span className="grow">
+                <span className="lrow-title block">Refills</span>
+                <span className="lrow-sub block">
+                  Next by {fmtDate(deviceService.refillInfo(next).refillBy, parent.timeZone)}
+                  {refiller ? ` · ${refiller.name}` : ''}
+                </span>
+              </span>
+              <Chevron />
+            </Link>
+          </li>
+        </ul>
+      )}
+
+      {!device && (
+        <div style={{ marginTop: 16 }}>
+          <Locked plan="device">The Pronoia dispenser gives out only the right pill and counts what’s left, so refill reminders go out 1 to 2 weeks ahead.</Locked>
+        </div>
+      )}
     </main>
   );
 }

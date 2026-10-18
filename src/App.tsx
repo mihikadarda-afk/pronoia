@@ -1,86 +1,129 @@
-import { useEffect } from 'react';
-import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { SessionProvider, useSession } from './lib/session';
-import { BottomNav, ToastProvider, useToast } from './components/ui';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
+import { HashRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { SessionProvider, TEXT_ZOOM, useSession } from './lib/session';
+import { TabBar, ToastProvider, useToast } from './components/ui';
 import { Pebble, PebbleSays } from './components/Pebble';
+import { chime } from './lib/chime';
 import { LiveSignIn } from './pages/LiveSignIn';
 import { RefillerHome } from './pages/RefillerHome';
-import { deviceService, isDemo } from './services/deviceService';
+import { deviceService, isLocal } from './services/deviceService';
 import type { Role } from './services/types';
 import { SignIn } from './pages/SignIn';
 import { Join } from './pages/Join';
+import { StationScreen } from './pages/Station';
 import { Onboarding } from './pages/caregiver/Onboarding';
 import { Today } from './pages/caregiver/Today';
-import { DoseDetail } from './pages/caregiver/DoseDetail';
 import { Medicines } from './pages/caregiver/Medicines';
-import { SlotEdit } from './pages/caregiver/SlotEdit';
+import { MedicineEdit } from './pages/caregiver/MedicineEdit';
 import { Refills } from './pages/caregiver/Refills';
 import { Weekly } from './pages/caregiver/Weekly';
-import { More } from './pages/caregiver/More';
+import { Settings } from './pages/caregiver/Settings';
 import { Alerts } from './pages/caregiver/Alerts';
 import { Notifications } from './pages/caregiver/Notifications';
-import { Device } from './pages/caregiver/Device';
+import { Plans } from './pages/caregiver/Plans';
+import { Station } from './pages/caregiver/Station';
 import { Privacy } from './pages/caregiver/Privacy';
 import { Family } from './pages/caregiver/Family';
-import { Messages } from './pages/caregiver/Messages';
+import { Inbox } from './pages/caregiver/Inbox';
+import { Photos } from './pages/caregiver/Photos';
+import { PhotoTime } from './pages/parent/PhotoTime';
+import { InboxNotifier } from './components/InboxNotifier';
 import { ParentToday } from './pages/parent/ParentToday';
 import { PillTime } from './pages/parent/PillTime';
+import { CheckIn, GoingOut } from './pages/parent/CheckIn';
 import { MessageFamily } from './pages/parent/MessageFamily';
 import { ParentPrivacy } from './pages/parent/ParentPrivacy';
 import { ParentMenu } from './pages/parent/ParentMenu';
 import { ParentWaiting } from './pages/parent/ParentWaiting';
 import { NeedHelp } from './pages/parent/NeedHelp';
-import { useAppState, useAuth } from './services/useApp';
+import { useAppState, useAuth, useMyId, useNow } from './services/useApp';
 
-/** The signed-in role: picked on the demo screen, or read from the circle when live. */
+/** The signed-in role: picked on this phone, or read from the circle when live. */
 function useRole(): Role | null {
   const session = useSession();
   const auth = useAuth();
-  if (isDemo) return session.role;
+  if (isLocal) return session.role;
   return auth.status === 'ready' || auth.status === 'pending' ? (auth.role ?? null) : null;
 }
 
 function Splash() {
   return (
-    <main className="screen screen--plain">
-      <div className="hero-wrap" style={{ paddingTop: 120 }}>
-        <Pebble mood="sleepy" size={130} />
-        <p className="muted" style={{ fontWeight: 800 }}>Waking up…</p>
+    <main className="screen screen--plain" style={{ display: 'grid', placeItems: 'center', minHeight: '80vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <Pebble mood="sleepy" size={72} />
+        <p className="muted small" style={{ marginTop: 12 }}>
+          Waking up…
+        </p>
       </div>
     </main>
   );
 }
 
-/** Errors from background saves show up as a toast. */
 function ErrorToasts() {
   const toast = useToast();
-  useEffect(() => deviceService.onError((m) => toast(`Couldn't save: ${m}`)), [toast]);
+  useEffect(() => deviceService.onError((m) => toast(`Couldn’t save: ${m}`)), [toast]);
   return null;
 }
 
 function CaregiverLayout() {
   const role = useRole();
   const auth = useAuth();
-  if (!isDemo && auth.status === 'loading') return <Splash />;
+  const s = useAppState();
+  const me = useMyId('caregiver');
+  if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'caregiver') return <Navigate to="/" replace />;
-  if (!isDemo && auth.status === 'pending') {
+  if (!isLocal && auth.status === 'pending') {
     return (
-      <main className="screen screen--plain">
-        <div className="hero-wrap" style={{ paddingTop: 80 }}>
-          <PebbleSays mood="sleepy" size={140} align="stack">
-            Waiting for {auth.caregiverName ?? 'the circle owner'} to approve you. Nothing is shared until then.
-          </PebbleSays>
-          <button className="link-btn" onClick={() => deviceService.signOut()}>Sign out</button>
-        </div>
+      <main className="screen screen--plain" style={{ paddingTop: 80 }}>
+        <PebbleSays mood="sleepy" size={48}>
+          Waiting for {auth.caregiverName ?? 'the circle owner'} to approve you. Nothing is shared until then.
+        </PebbleSays>
+        <button className="link-btn" style={{ marginTop: 16 }} onClick={() => deviceService.signOut()}>
+          Sign out
+        </button>
       </main>
     );
   }
+  const pending = s.people.some((p) => p.status === 'pending');
   return (
     <>
+      <InboxNotifier personId={me} inboxPath="/care/inbox" />
       <Outlet />
-      <BottomNav />
+      <TabBar dots={{ Family: pending, Settings: s.notices.some((n) => !n.read && n.kind !== 'join') }} />
     </>
   );
+}
+
+/**
+ * On the parent's phone, pill time and check-in time take over the screen once,
+ * with a chime. The parent can go back; it won't jump again for the same item.
+ */
+function useParentMoments() {
+  const nav = useNavigate();
+  const loc = useLocation();
+  const s = useAppState();
+  useNow(15_000);
+  const seen = useRef(new Set<string>());
+  const dose = deviceService.currentDose();
+  const check = deviceService.currentCheckIn();
+  const photo = deviceService.currentPhotoRequest();
+  useEffect(() => {
+    if (loc.pathname !== '/parent') return;
+    if (dose && !seen.current.has(dose.id)) {
+      seen.current.add(dose.id);
+      chime();
+      nav(`/parent/pill/${encodeURIComponent(dose.id)}`);
+    } else if (check && !s.pause && !seen.current.has(check.id)) {
+      seen.current.add(check.id);
+      chime(check.status === 'missed_notified');
+      nav('/parent/checkin');
+    } else if (photo && !seen.current.has(`photo:${photo.id}`)) {
+      seen.current.add(`photo:${photo.id}`);
+      chime();
+      nav('/parent/photo');
+    }
+  }, [dose?.id, check?.id, photo?.id, s.pause, loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 function ParentLayout() {
@@ -88,26 +131,60 @@ function ParentLayout() {
   const role = useRole();
   const auth = useAuth();
   const s = useAppState();
-  if (!isDemo && auth.status === 'loading') return <Splash />;
+  useParentMoments();
+  if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'parent') return <Navigate to="/" replace />;
-  if (isDemo && !parentLinked) return <Navigate to="/join" replace />;
+  if (isLocal && !parentLinked) return <Navigate to="/join" replace />;
   const parent = s.people.find((p) => p.id === s.parentId);
-  const waiting = isDemo ? parent?.status === 'pending' : auth.status === 'pending';
+  const waiting = isLocal ? parent?.status === 'pending' : auth.status === 'pending';
   return <div lang={lang}>{waiting ? <ParentWaiting /> : <Outlet />}</div>;
+}
+
+function StationLayout() {
+  const role = useRole();
+  const auth = useAuth();
+  const { lang } = useSession();
+  if (!isLocal && auth.status === 'loading') return <Splash />;
+  if (role !== 'station') return <Navigate to="/" replace />;
+  if (!isLocal && auth.status === 'pending') {
+    return (
+      <div className="station">
+        <PebbleSays mood="sleepy" size={110} align="stack">
+          Waiting for {auth.caregiverName ?? 'your family'} to approve this phone.
+        </PebbleSays>
+      </div>
+    );
+  }
+  return (
+    <div lang={lang}>
+      <StationScreen />
+    </div>
+  );
 }
 
 function Home() {
   const role = useRole();
   const auth = useAuth();
-  if (!isDemo) {
+  if (!isLocal) {
     if (auth.status === 'loading') return <Splash />;
     if (auth.status === 'signed-out') return <LiveSignIn />;
     if (auth.status === 'no-circle') return <Navigate to="/setup" replace />;
   }
   if (role === 'caregiver') return <Navigate to="/care" replace />;
   if (role === 'parent') return <Navigate to="/parent" replace />;
+  if (role === 'station') return <Navigate to="/station" replace />;
   if (role === 'refiller') return <RefillerHome />;
   return <SignIn />;
+}
+
+/** Text size for this phone: the whole app scales, like the browser's own zoom. */
+function Zoomed({ children }: { children: React.ReactNode }) {
+  const { textSize } = useSession();
+  return (
+    <div className="app" style={{ zoom: TEXT_ZOOM[textSize] }}>
+      {children}
+    </div>
+  );
 }
 
 export function App() {
@@ -116,29 +193,35 @@ export function App() {
       <ToastProvider>
         <ErrorToasts />
         <HashRouter>
-          <div className="app">
+          <Zoomed>
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/join" element={<Join />} />
               <Route path="/setup" element={<Onboarding />} />
+              <Route path="/station" element={<StationLayout />} />
               <Route path="/care" element={<CaregiverLayout />}>
                 <Route index element={<Today />} />
-                <Route path="dose/:id" element={<DoseDetail />} />
                 <Route path="meds" element={<Medicines />} />
-                <Route path="meds/:slot" element={<SlotEdit />} />
+                <Route path="meds/:slot" element={<MedicineEdit />} />
                 <Route path="refills" element={<Refills />} />
                 <Route path="week" element={<Weekly />} />
-                <Route path="more" element={<More />} />
+                <Route path="family" element={<Family />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="plans" element={<Plans />} />
                 <Route path="alerts" element={<Alerts />} />
                 <Route path="notifications" element={<Notifications />} />
-                <Route path="device" element={<Device />} />
+                <Route path="station" element={<Station />} />
                 <Route path="privacy" element={<Privacy />} />
-                <Route path="family" element={<Family />} />
-                <Route path="messages" element={<Messages />} />
+                <Route path="inbox" element={<Inbox />} />
+                <Route path="photos" element={<Photos />} />
+                <Route path="messages" element={<Navigate to="/care/inbox" replace />} />
               </Route>
               <Route path="/parent" element={<ParentLayout />}>
                 <Route index element={<ParentToday />} />
                 <Route path="pill/:id" element={<PillTime />} />
+                <Route path="checkin" element={<CheckIn />} />
+                <Route path="photo" element={<PhotoTime />} />
+                <Route path="out" element={<GoingOut />} />
                 <Route path="message" element={<MessageFamily />} />
                 <Route path="help" element={<NeedHelp />} />
                 <Route path="privacy" element={<ParentPrivacy />} />
@@ -146,7 +229,7 @@ export function App() {
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </div>
+          </Zoomed>
         </HashRouter>
       </ToastProvider>
     </SessionProvider>

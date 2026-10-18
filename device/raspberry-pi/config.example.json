@@ -1,0 +1,10 @@
+{
+  "api_url": "https://your-site.vercel.app",
+  "supabase_url": "https://your-project.supabase.co",
+  "supabase_anon_key": "your-anon-or-publishable-key",
+  "device_code": "PRN-XXXX-XX",
+  "device_secret": "paste-the-secret-from-provision-device",
+  "button_ok_pin": 17,
+  "button_help_pin": 27,
+  "buzzer_pin": 22
+}

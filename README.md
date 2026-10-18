@@ -1,50 +1,106 @@
 # Pronoia
 
-A mobile-first companion app for the Pronoia smart pill dispenser. The dispenser sits in an elderly parent's home in India, and the app answers one question for the caregiver far away: *did they take the right pill?*
+A mobile-first app that tells an adult child far away (say, Mihika in New York) that their parent in India (Nanaji in Ahmedabad) took the right pill and is doing okay, without a 3am phone call.
 
-The app has two sides that link with a family code:
+It has three sides that link with a family code:
 
-- **Caregiver** (e.g. Mihika in New York): today's doses in both time zones, dose detail with clip review, slots, refills, weekly summary, alerts, notifications, device and plan, privacy and family.
-- **Parent** (e.g. Nanaji in Ahmedabad): huge text, today's pills, "Message my family", "I need help", in English, Hindi and Gujarati.
+- **Caregiver**: Today (doses and check-ins on one timeline, in both time zones), medicines, family, settings, plans, alerts, weekly summary, refills, privacy.
+- **Parent**: huge text and big buttons in English, Hindi or Gujarati. The next pill with its photo, I took it, a one-tap I’m okay, I’m going out, Message my family, I need help.
+- **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, films a 12-second video and asks Gemini whether the pill was taken.
 
 **Pebble**, the capsule mascot, appears on every main screen in six moods.
 
-The app runs in one of two modes:
+## Plans
 
-- **Live**: real accounts and data in [Supabase](https://supabase.com), shared between everyone's phones, with the dispenser reporting over HTTPS. Used whenever `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
-- **Demo**: a sample family kept in the browser, with buttons to simulate the dispenser. Used when those variables aren't set, or with `?demo` in the URL.
+| Plan | Price | What the family gets |
+| --- | --- | --- |
+| Free | $0 | Reminders with a photo of the right pill, I took it taps, daily check-ins, a simple log. No camera or video at all, and no caregiver alerts |
+| Phone | $9 a month or $79 a year | An old phone on a stand films a 12-second video at each dose for the AI check. Notifications with a confidence score; missed check-ins escalate to the refiller, then the caregiver |
+| Device | $299 once + $15 a month | The Pronoia dispenser: 5 slots, weight sensors, I’m okay button, pill counts, defect replacement. Its own camera films each dose and uploads the clip for the AI check |
 
-## What's real and what isn't yet
+Higher-plan features show as soft locked cards with an Upgrade link, never pop-ups.
+
+## Notifications
+
+Every alert is a notification in the app: it lands in the person’s inbox (the bell on Today, or the refiller’s screen) and on their phone once they tap **Turn on** under **Settings → Notifications**. While Pronoia is open or in the background, the app shows them itself. With the live backend and VAPID keys, **Web Push** also reaches phones when the app is closed: a Supabase database webhook on `outbox` inserts calls `/api/push`, which sends to every phone that person turned notifications on for. Anything that may not wake the caregiver waits in the inbox during their quiet hours. On iPhone, Web Push works once Pronoia is added to the Home Screen.
+
+## Smile time
+
+Like BeReal, a few times a day (11 AM and 6 PM by default, up to three) the parent’s phone chimes: *Smile time! Mihika would love a photo of your day.* One big button opens the camera; the photo goes to the caregiver’s inbox, Today and the **Smile time** gallery. The caregiver can also **Ask for a photo** any time. It’s always the parent’s choice: a moment that passes unanswered just closes, and no one is alerted.
+
+## Text size
+
+**Settings → Text size** (and **Menu → Text size** on the parent’s phone): Normal, Large or Largest, saved per phone.
+
+## Check-ins
+
+A few times a day (10:30 AM and 4:30 PM by default, never in sleep hours) Pebble says hi and the parent taps I’m okay. Every taken dose counts too. On Phone and Device, a missed check-in chimes again at +10 min, notifies the refiller at +25 (who taps **Reply OK** after looking in), and the caregiver at +45 if the refiller hasn’t replied OK (ignoring quiet hours). I need help skips straight to everyone. The camera is never used for check-ins, and nothing claims to be fall detection.
+
+## Modes
+
+- **This phone only**: used when Supabase isn’t configured (or with `?local`). Everything is kept in this browser and starts with a sample family (Mihika, Nanaji, Ravi) and a week of history, which **Set up a family** lets you replace. The front page lets you open the caregiver, parent or dose station view on the same phone.
+- **Live**: real accounts and data in [Supabase](https://supabase.com), used when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
+
+## Run it
+
+```bash
+npm install
+npm run dev        # the app, http://localhost:5173 (this-phone-only unless Supabase is configured)
+GEMINI_API_KEY=... npm run dev:api    # the AI dose check server, http://localhost:8787 (vite proxies /api to it)
+```
+
+The AI check needs `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey)) in the server’s environment. It is only ever read by `server/` and `api/`, never bundled into the app. Without it (or without a camera), the dose station says what’s wrong and tries again a minute later; if the dose still isn’t confirmed, the caregiver gets the usual missed-dose notification.
+
+For production, `npm run build` then `npm run serve` serves `dist/` and `/api/check-dose` from one Node process. If the app is hosted elsewhere, set `VITE_API_URL` at build time and `ALLOWED_ORIGIN` on the server.
+
+### The AI dose check
+
+`POST /api/check-dose` with `{video: WebM or MP4 data URL, medicine: {name, nickname, strength}, time}` (or `frames: [up to 3 JPEG data URLs]` on phones that can’t record video) returns `{status: taken | unsure | not_taken, confidence: 0–100, reason}`. It calls Gemini (`gemini-flash-latest` unless `GEMINI_MODEL` says otherwise) with a JSON schema for the answer (`server/checkDose.mjs`), and retries when Google says it’s busy or rate-limited. The video stays in memory for that one request.
+
+`POST /api/device-clip` is the dispenser’s upload: `{code, secret, slot, time, video or frames}`. The server checks the dispenser’s code and secret in Supabase, runs the same AI check and records the result with `device_clip_result()`. It needs `SUPABASE_URL` and `SUPABASE_ANON_KEY` on the server. When `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on the server, it requires a signed-in user’s token, and it rate-limits each IP to 60 checks an hour.
+
+On the dose station, a confidence below the caregiver’s review threshold (70% by default) becomes **Picked up, not confirmed**, and the caregiver can watch the video. Videos are deleted when reviewed, or 4 hours after capture.
+
+## Deploy on Vercel
+
+1. In Vercel, **Add New → Project** and import this GitHub repository. Vercel reads `vercel.json`: it builds with Vite into `dist/`, and the files in `api/` (`check-dose`, `device-clip`, `push`, `health`) become serverless functions.
+2. In **Settings → Environment Variables**, add `GEMINI_API_KEY` for Production and Preview. Optional: `GEMINI_MODEL`, and for the live app `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
+3. Deploy, then open `/api/health` on your site. It should say `"ai": true`.
+4. For notifications when the app is closed (live app only): run `npx web-push generate-vapid-keys`, and add `VITE_VAPID_PUBLIC_KEY` (the public key), `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:you@example.com`), `SUPABASE_SERVICE_ROLE_KEY` and a long random `PUSH_WEBHOOK_SECRET`. Then in Supabase, **Database → Webhooks → Create**: table `outbox`, event Insert, HTTP POST to `https://<your-site>/api/push`, with header `x-webhook-secret: <the same secret>`. Redeploy so the app picks up the public key.
+
+Without the Supabase variables the site keeps everything on each visitor’s phone, and `/api/check-dose` is open to anyone who finds it (limited to 60 checks an hour per IP on each server instance). Set a budget or quota on the key in Google Cloud.
+
+## What’s real and what isn’t yet
 
 | Part | Status |
 | --- | --- |
-| Caregiver sign-in (email + 6-digit code) | Real |
-| Parent and refill-helper sign-in (family code, no email needed) | Real (anonymous accounts) |
-| Family circle, codes that work once and expire in 24 h, caregiver approval | Real |
-| Who sees what (caregiver / parent / refill helper) | Real, enforced in the database |
-| Medicines, schedules, refills, alerts and notification settings | Real |
-| Live updates between phones | Real (Supabase Realtime) |
-| Dispenser API: heartbeat, dispensed, picked up, swallow result, slot status | Real |
-| Missed-dose detection | Real (runs every 5 minutes with pg_cron) |
-| ESP32 firmware | Written, not yet compiled or run on hardware. Motor, load cell, buzzer and camera are stubs to fill in |
-| WhatsApp, SMS, email, calls, push | **Queued, not sent.** Every alert lands in the `outbox` table with its channel and whether it may break quiet hours. A sender is the next stage |
-| Video clips and the AI swallow check | **Not yet.** The dispenser reports a confidence number; clip upload, playback and auto-deletion are the next stage |
-| Payments | **Not yet** |
+| Accounts, family codes (once, 24 h), caregiver approval, who sees what | Real (Supabase, row-level security) |
+| Plans, check-ins, escalation, pauses, hearts | Real in the database (`escalate_check_ins` runs every 5 minutes with pg_cron) |
+| Dose station video and AI check | Real (needs `GEMINI_API_KEY`). Tested end to end with a fake camera feed and the real Gemini API |
+| Raspberry Pi dispenser | `device/raspberry-pi/`: schedule, Pi Camera video, uploads, buttons and retries are real. The slot motor and load cell are hooks to fill in for your build |
+| Dispenser API and missed-dose detection | Real |
+| Notifications | Real: in-app inbox for everyone, phone notifications while the app is open, and Web Push when it’s closed (live app, after the webhook and VAPID keys are set up) |
+| Smile time photos | Real. Photos are small JPEGs kept in the database (the last 12 on a phone without the backend) |
+| Voice notes | Recorded on the caregiver’s phone; the parent sees that one arrived, the audio isn’t delivered yet |
+| Payments | **Mocked** |
+| Pebble artwork | Drawn in SVG (`src/components/Pebble.tsx`). The four `mascot/v4` images weren’t in this repo |
+| Sample pill photos and portraits | Illustrations in `public/pills` and `public/people`. Caregivers add real photos per medicine |
 
 ## Set up the live app
 
 ### 1. Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Push the database:
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref <your-project-ref>
-   npx supabase db push
-   ```
-   This creates the tables, row-level security, the server functions and the missed-dose job.
-3. In the dashboard:
-   - **Database → Extensions**: check that **pg_cron** is on. Then in **Integrations → Cron** you should see `pronoia-missed-doses`. If it's missing, enable pg_cron and run the last `do $$ ... $$` block of the migration again.
+2. **Database → Extensions**: turn on **pg_cron** first, so the scheduled jobs get created.
+3. Create the database, either way:
+   - **SQL Editor**: paste and run each file in `supabase/migrations/`, oldest first (`20261008…`, then `20261018…`, then `20261020…`).
+   - Or the CLI: `npx supabase login`, `npx supabase link --project-ref <your-project-ref>`, `npx supabase db push`.
+
+   This creates the tables, row-level security, the server functions and the scheduled jobs.
+
+Either kind of API key works: the newer publishable and secret keys (`sb_publishable_…`, `sb_secret_…`), or the older anon and service_role keys.
+4. In the dashboard:
+   - **Integrations → Cron**: you should see `pronoia-missed-doses`, `pronoia-check-ins` and `pronoia-frames`. If they're missing, pg_cron wasn't on: turn it on and run the last `do $$ ... $$` block of the first two migrations again.
    - **Authentication → Sign In / Providers**: keep **Email** on and turn on **Allow anonymous sign-ins** (parents and refill helpers join with a code, not an email). Consider turning on CAPTCHA, since anonymous sign-ins are open to anyone.
    - **Authentication → Email Templates**: paste `supabase/templates/sign-in-code.html` into both **Magic Link** and **Confirm signup**, so the email shows the 6-digit code.
    - **Authentication → SMTP Settings**: set up your own email sender. The built-in one only sends a few emails an hour.
@@ -55,21 +111,22 @@ The app runs in one of two modes:
 ```bash
 cp .env.example .env.local   # fill in the project URL and anon (publishable) key
 npm install
-npm run dev                  # http://localhost:5173
-npm run build                # static files in dist/
+npm run build
+SUPABASE_URL=... SUPABASE_ANON_KEY=... GEMINI_API_KEY=... npm run serve
 ```
 
-Host `dist/` on any static host (Netlify, Vercel, Cloudflare Pages, GitHub Pages). It uses hash routing, so no server rewrites are needed.
+The app uses hash routing, so `dist/` also works on any static host; the AI check then needs `npm run serve` running somewhere, with `VITE_API_URL` pointing at it.
+
 
 ### 3. Dispensers
 
-Each dispenser gets a code (printed on its label) and a secret (flashed into the firmware). Only a hash of the secret is stored.
+The dispenser is a Raspberry Pi with a Pi Camera: see [`device/raspberry-pi/README.md`](device/raspberry-pi/README.md). Each dispenser gets a code (printed on its label) and a secret (in the Pi’s `config.json`). Only a hash of the secret is stored.
 
 ```bash
 SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/provision-device.mjs
 ```
 
-The caregiver enters the code during setup or in **More → Device and plan**.
+The caregiver enters the code during setup or in **Settings → Dispenser**.
 
 **No hardware yet?** The simulator behaves like a dispenser:
 
@@ -81,7 +138,7 @@ node scripts/simulate-dispenser.mjs drop 3 22:00        # drop and leave it, to 
 node scripts/simulate-dispenser.mjs stuck 1             # report a jammed slot
 ```
 
-**Firmware**: `firmware/pronoia-dispenser/` is an Arduino sketch for the ESP32 (needs ArduinoJson 7). Copy `config.example.h` to `config.h`, fill in WiFi, the Supabase URL and anon key, and the device code and secret. Fill in the functions marked `HARDWARE:` for your motor, load cell, buzzer and LED, and camera. Before shipping, replace `setInsecure()` with a pinned certificate.
+On the Pi itself, `python3 device/raspberry-pi/pronoia_dispenser.py --simulate --once` runs the whole dose (heartbeat, dispense, lift, upload) without any hardware.
 
 ### Dispenser API
 
@@ -97,12 +154,13 @@ The dispenser calls one function: `POST {SUPABASE_URL}/rest/v1/rpc/device_event`
 
 Times are the parent's local time. A dose the dispenser never reports is marked missed `caregiverAlertMin` minutes after its time.
 
-## Develop locally
-
-Needs Docker.
+## Tests
 
 ```bash
-npm run db:start        # local Supabase; prints the URL and keys
+npm test                # the AI check and push servers, against fake Gemini and Supabase
+python3 -m unittest tests/test_pi_dispenser.py   # the Raspberry Pi program, in simulate mode
+npm run test:sql        # plans, check-ins, inbox, photos, the station, the dispenser and permissions, on plain Postgres (PGURL=...)
+npm run db:start        # local Supabase (needs Docker), then:
 npm run test:backend    # end-to-end checks of codes, approval, permissions, dispenser API, help, missed doses
 ```
 
@@ -111,31 +169,27 @@ Sign-in emails go to the local mail viewer at http://127.0.0.1:54324.
 ## Structure
 
 ```
-supabase/
-  migrations/         tables, row-level security, server functions, missed-dose job
-  templates/          sign-in email with the 6-digit code
+server/               the AI dose check (Gemini) and a static file server
+api/                  the same check as Vercel functions
+supabase/migrations/  tables, row-level security, server functions, cron jobs
 src/
   services/
     service.ts        the DeviceService interface every screen uses
-    liveService.ts    Supabase implementation
-    mockService.ts    demo family in the browser
-    mockData.ts, notifications.ts, types.ts
-  components/         Pebble, chips, pill icons, family code card, email sign-in
-  pages/              sign-in, join, caregiver/*, parent/*
-  lib/                time zones, translations (en/hi/gu), session
-scripts/              provision a dispenser, simulate a dispenser
-firmware/             ESP32 sketch
-tests/                backend tests against local Supabase
+    mockService.ts    the family on this phone, and its clock
+    liveService.ts    Supabase
+    aiCheck.ts        the app's side of the AI check
+    plans.ts, notifications.ts, mockData.ts, types.ts
+  components/         Pebble, rows, bottom sheets, locked cards, family code
+  pages/              caregiver/*, parent/*, Station (dose station), Join, sign-in
+  lib/                time zones, copy, translations (en/hi/gu), chime, session
+scripts/              provision or simulate a dispenser, SQL tests
+device/raspberry-pi/  the dispenser program for a Raspberry Pi and Pi Camera
+tests/
 ```
 
-## Demo walkthrough
+## Try it
 
-Open the app without Supabase settings (or add `?demo`):
-
-1. Pick **Caregiver** or **Parent** on the sign-in screen.
-2. **Today**: the 8:00 PM dose needs a look. Tap it, **Review clip**, then **Looks good** or **Not taken**.
-3. **Week**: one missed dose (Tuesday), one late, tonight's unconfirmed one.
-4. **More → Family**: approve Anika. The family code is `PEB-4K7`.
-5. Sign out, **I have a code** → **I'm the parent** → `PEB-4K7` to see joining.
-6. **Parent → Pill time (demo)** drops the 10 PM vitamin; **I took it** to celebrate.
-7. **More → Reset demo data** starts over.
+1. Open the app and tap **Set up a family**. Pick a plan first: Free, Phone or Device. The steps after it follow the plan: Phone adds setting up the old phone, Device adds pairing the dispenser.
+2. On another phone (or from the front page of the same one), **I have a family code → I’m the parent**. On the Phone plan, the old phone joins with **This is the dose station** and a new code.
+3. At dose time the station chimes, shows the pill, films 12 seconds and sends the video to the AI check. The caregiver sees Taken, or Needs a look with **Watch the video**.
+4. **Settings → Plans** compares the three plans; **This week** has the week grid. Every notification is in the inbox (the bell on Today).
