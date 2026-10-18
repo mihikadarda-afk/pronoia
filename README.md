@@ -6,7 +6,7 @@ It has three sides that link with a family code:
 
 - **Caregiver**: Today (doses and check-ins on one timeline, in both time zones), medicines, family, settings, plans, alerts, weekly summary, refills, privacy.
 - **Parent**: huge text and big buttons in English, Hindi or Gujarati. The next pill with its photo, I took it, a one-tap I’m okay, I’m going out, Message my family, I need help.
-- **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, takes 3 still frames and asks Claude Haiku whether the pill was taken.
+- **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, takes 3 still frames and asks Gemini whether the pill was taken.
 
 **Pebble**, the capsule mascot, appears on every main screen in six moods.
 
@@ -34,18 +34,26 @@ A few times a day (10:30 AM and 4:30 PM by default, never in sleep hours) Pebble
 ```bash
 npm install
 npm run dev        # the app, http://localhost:5173 (demo unless Supabase is configured)
-npm run dev:api    # the AI dose check server, http://localhost:8787 (vite proxies /api to it)
+GEMINI_API_KEY=... npm run dev:api    # the AI dose check server, http://localhost:8787 (vite proxies /api to it)
 ```
 
-The AI check needs `ANTHROPIC_API_KEY` in the server’s environment. It is only ever read by `server/`, never bundled into the app. Without it (or without a camera), the dose station offers **Use sample frames** instead.
+The AI check needs `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey)) in the server’s environment. It is only ever read by `server/` and `api/`, never bundled into the app. Without it (or without a camera), the dose station offers **Use sample frames** instead.
 
 For production, `npm run build` then `npm run serve` serves `dist/` and `/api/check-dose` from one Node process. If the app is hosted elsewhere, set `VITE_API_URL` at build time and `ALLOWED_ORIGIN` on the server.
 
 ### The AI dose check
 
-`POST /api/check-dose` with `{frames: [3 JPEG data URLs], medicine: {name, nickname, strength}, time}` returns `{status: taken | unsure | not_taken, confidence: 0–100, reason}`. It calls `claude-haiku-5-5` with structured output (`server/checkDose.mjs`). Frames stay in memory for that one request. When `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on the server, it requires a signed-in user’s token, and it rate-limits each IP to 60 checks an hour.
+`POST /api/check-dose` with `{frames: [3 JPEG data URLs], medicine: {name, nickname, strength}, time}` returns `{status: taken | unsure | not_taken, confidence: 0–100, reason}`. It calls Gemini (`gemini-flash-latest` unless `GEMINI_MODEL` says otherwise) with a JSON schema for the answer (`server/checkDose.mjs`). Frames stay in memory for that one request. When `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on the server, it requires a signed-in user’s token, and it rate-limits each IP to 60 checks an hour.
 
 On the dose station, a confidence below the caregiver’s review threshold (70% by default) becomes **Picked up, not confirmed**, and the caregiver can review the frames. Frames are deleted when reviewed, or 4 hours after capture.
+
+## Deploy on Vercel
+
+1. In Vercel, **Add New → Project** and import this GitHub repository. Vercel reads `vercel.json`: it builds with Vite into `dist/`, and `api/check-dose.js` and `api/health.js` become serverless functions.
+2. In **Settings → Environment Variables**, add `GEMINI_API_KEY` for Production and Preview. Optional: `GEMINI_MODEL`, and for the live app `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
+3. Deploy, then open `/api/health` on your site. It should say `"ai": true`.
+
+Without the Supabase variables the site runs the demo family, and `/api/check-dose` is open to anyone who finds it (limited to 60 checks an hour per IP on each server instance). Set a budget or quota on the key in Google Cloud.
 
 ## What’s real and what isn’t yet
 
@@ -53,7 +61,7 @@ On the dose station, a confidence below the caregiver’s review threshold (70% 
 | --- | --- |
 | Accounts, family codes (once, 24 h), caregiver approval, who sees what | Real (Supabase, row-level security) |
 | Plans, check-ins, escalation, pauses, hearts | Real in the database (`escalate_check_ins` runs every 5 minutes with pg_cron) |
-| Dose station camera and AI check | Real (needs `ANTHROPIC_API_KEY`), with a sample-frames fallback |
+| Dose station camera and AI check | Real (needs `GEMINI_API_KEY`), with a sample-frames fallback |
 | Dispenser API and missed-dose detection | Real; ESP32 firmware written, not yet run on hardware |
 | WhatsApp, SMS, email, calls | **Queued, not sent.** Every message lands in the `outbox` table. The refiller’s OK reply comes in through `refiller_replied_ok()` once a WhatsApp provider’s webhook calls it |
 | Voice notes | Recorded on the caregiver’s phone; the parent sees that one arrived, the audio isn’t delivered yet |
@@ -86,7 +94,7 @@ On the dose station, a confidence below the caregiver’s review threshold (70% 
 cp .env.example .env.local   # fill in the project URL and anon (publishable) key
 npm install
 npm run build
-SUPABASE_URL=... SUPABASE_ANON_KEY=... ANTHROPIC_API_KEY=... npm run serve
+SUPABASE_URL=... SUPABASE_ANON_KEY=... GEMINI_API_KEY=... npm run serve
 ```
 
 The app uses hash routing, so `dist/` also works on any static host; the AI check then needs `npm run serve` running somewhere, with `VITE_API_URL` pointing at it.
@@ -132,7 +140,7 @@ Times are the parent's local time. A dose the dispenser never reports is marked 
 ## Tests
 
 ```bash
-npm test                # the AI check server, against a fake Anthropic API
+npm test                # the AI check server, against a fake Gemini API
 npm run test:sql        # plans, check-in escalation, the dose station and permissions, on plain Postgres (PGURL=...)
 npm run db:start        # local Supabase (needs Docker), then:
 npm run test:backend    # end-to-end checks of codes, approval, permissions, dispenser API, help, missed doses
@@ -143,7 +151,8 @@ Sign-in emails go to the local mail viewer at http://127.0.0.1:54324.
 ## Structure
 
 ```
-server/               the AI dose check (Claude Haiku) and a static file server
+server/               the AI dose check (Gemini) and a static file server
+api/                  the same check as Vercel functions
 supabase/migrations/  tables, row-level security, server functions, cron jobs
 src/
   services/

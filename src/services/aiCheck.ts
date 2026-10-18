@@ -1,6 +1,6 @@
 import type { DoseCheckResult, Medicine } from './types';
 
-// The AI dose check lives on the server (server/checkDose.mjs). The app only
+// The AI dose check lives on the server (server/checkDose.mjs, or api/check-dose.js on Vercel). The app only
 // sends three frames and gets back a status and a confidence score.
 
 const API = (import.meta.env.VITE_API_URL as string | undefined) ?? '';

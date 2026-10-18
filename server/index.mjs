@@ -3,7 +3,8 @@
 // it next to `npm run dev`, which proxies /api here.
 //
 // Environment:
-//   ANTHROPIC_API_KEY    required for the AI check (never sent to the app)
+//   GEMINI_API_KEY       required for the AI check (never sent to the app)
+//   GEMINI_MODEL         optional, default gemini-flash-latest
 //   PORT                 default 8787
 //   SUPABASE_URL, SUPABASE_ANON_KEY
 //                        when set, /api/check-dose needs a signed-in Supabase user
@@ -13,13 +14,12 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MODEL, checkDose, errorFor, hasApiKey, parseRequest, HttpError } from './checkDose.mjs';
+import { HttpError, handleCheckDose, hasApiKey, model, supabaseUserOk } from './checkDose.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const DIST = resolve(here, '..', 'dist');
 const PORT = Number(process.env.PORT ?? 8787);
 const MAX_BODY = 6_000_000;
-const PER_HOUR = 60;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -32,25 +32,6 @@ const TYPES = {
   '.json': 'application/json',
   '.woff2': 'font/woff2',
 };
-
-const hits = new Map(); // ip -> [timestamps]
-function limited(ip) {
-  const now = Date.now();
-  const list = (hits.get(ip) ?? []).filter((t) => now - t < 3600_000);
-  list.push(now);
-  hits.set(ip, list);
-  return list.length > PER_HOUR;
-}
-
-async function signedIn(req) {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) return true;
-  const auth = req.headers.authorization ?? '';
-  if (!auth.startsWith('Bearer ')) return false;
-  const res = await fetch(`${url}/auth/v1/user`, { headers: { apikey: key, Authorization: auth } });
-  return res.ok;
-}
 
 function readBody(req) {
   return new Promise((ok, fail) => {
@@ -93,22 +74,17 @@ function cors(req) {
 async function api(req, res) {
   const h = cors(req);
   if (req.method === 'OPTIONS') return send(res, 204, {}, h);
-  if (req.url === '/api/health') return send(res, 200, { ok: true, ai: hasApiKey(), model: MODEL }, h);
+  if (req.url === '/api/health') return send(res, 200, { ok: true, ai: hasApiKey(), model: model() }, h);
   if (req.url !== '/api/check-dose' || req.method !== 'POST') return send(res, 404, { error: 'Not found' }, h);
+  let body;
   try {
-    if (!hasApiKey()) throw new HttpError(503, 'The AI check is not set up on this server (no ANTHROPIC_API_KEY).');
-    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
-    if (limited(ip)) throw new HttpError(429, 'Too many checks. Try again later.');
-    if (!(await signedIn(req))) throw new HttpError(401, 'Sign in first.');
-    const input = parseRequest(await readBody(req));
-    // Frames are only held in memory for this request. Nothing is stored or logged.
-    const result = await checkDose(input);
-    send(res, 200, result, h);
+    body = await readBody(req);
   } catch (e) {
-    const { status, message } = errorFor(e);
-    if (status >= 500) console.error('check-dose:', e?.message ?? e);
-    send(res, status, { error: message }, h);
+    return send(res, e instanceof HttpError ? e.status : 400, { error: e.message }, h);
   }
+  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
+  const out = await handleCheckDose(body, { ip, signedIn: () => supabaseUserOk(req.headers.authorization) });
+  send(res, out.status, out.body, h);
 }
 
 async function file(req, res) {
@@ -136,5 +112,5 @@ createServer((req, res) => {
   if (req.url?.startsWith('/api/')) api(req, res);
   else file(req, res);
 }).listen(PORT, () => {
-  console.log(`Pronoia on http://localhost:${PORT}  (AI check: ${hasApiKey() ? MODEL : 'off, set ANTHROPIC_API_KEY'})`);
+  console.log(`Pronoia on http://localhost:${PORT}  (AI check: ${hasApiKey() ? model() : 'off, set GEMINI_API_KEY'})`);
 });

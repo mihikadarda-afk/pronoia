@@ -12,7 +12,7 @@ export function Privacy() {
     ['The camera only turns on at dose time', `${device ? 'On the dispenser it wakes when the pill is lifted.' : 'On the dose station it turns on by itself when the pill is due,'} and turns off again right after. No live view, no watching the room.`],
     ['Only 3 still frames are checked', 'Not a video. The frames go to the AI check, which says whether the pill was picked up and swallowed.'],
     ['Frames are deleted within hours', `As soon as you review them, or automatically after ${FRAMES_KEEP_H} hours if nobody does. The result and the confidence score stay; the pictures don’t.`],
-    ['Never used to train AI', 'Frames are sent to Anthropic’s API only to answer that one question, and are not used to train models. No ads, no sharing.'],
+    ['Not used to train AI', 'Frames go to Google’s Gemini API only to answer that one question. On a paid Gemini API key, Google doesn’t use them to train its models. No ads, no sharing.'],
     ['Check-ins are a tap', 'The camera is never used for check-ins. It’s a hello, not surveillance, and it’s not fall detection.'],
   ];
   const stored = [-1, 0]
