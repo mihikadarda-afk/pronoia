@@ -38,7 +38,7 @@ export function PillPhoto({ med, size = 40, className = 'pill-thumb' }: { med: P
 
 export function Avatar({ person, size = 40 }: { person: Pick<Person, 'name' | 'photo' | 'role'>; size?: number }) {
   if (person.photo) return <img src={person.photo} alt="" className="avatar" style={{ width: size, height: size }} />;
-  const bg = person.role === 'parent' ? '#F2C2C0' : person.role === 'refiller' ? '#E6E8D4' : '#D6E0CF';
+  const bg = person.role === 'parent' ? '#F2C2C0' : '#D6E0CF';
   return (
     <span className="avatar" style={{ width: size, height: size, background: bg, fontSize: size * 0.4 }} aria-hidden>
       {(person.name || '?').slice(0, 1).toUpperCase()}

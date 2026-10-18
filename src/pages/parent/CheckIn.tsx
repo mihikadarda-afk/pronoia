@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
-import { readImage } from '../../components/ui';
+import { Camera } from '../../components/Camera';
 import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { usePeople } from '../../services/useApp';
@@ -13,6 +13,7 @@ export function CheckIn() {
   const { caregiver } = usePeople();
   const [done, setDone] = useState(false);
   const [smile, setSmile] = useState(false);
+  const [camera, setCamera] = useState(false);
 
   if (done) {
     return (
@@ -29,26 +30,26 @@ export function CheckIn() {
           {smile ? (
             <p style={{ textAlign: 'center', color: 'var(--ink-soft)' }}>{t.smileSent}</p>
           ) : (
-            <label className="p-link" style={{ cursor: 'pointer' }}>
-              {/* Optional, and only when the parent chooses: the phone's own camera, one photo. */}
-              <input
-                type="file"
-                accept="image/*"
-                capture="user"
-                hidden
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (f) {
-                    deviceService.sendPhoto(null, await readImage(f, 720));
-                    deviceService.sendSmile();
-                    setSmile(true);
-                  }
-                }}
-              />
+            // Optional, and only when the parent chooses: the phone's own camera, one photo.
+            <button className="p-link" onClick={() => setCamera(true)}>
               {t.sendSmile}
-            </label>
+            </button>
           )}
         </div>
+        {camera && (
+          <Camera
+            big
+            facing="user"
+            title={t.sendSmile}
+            onClose={() => setCamera(false)}
+            onCapture={(photo) => {
+              deviceService.sendPhoto(null, photo);
+              deviceService.sendSmile();
+              setCamera(false);
+              setSmile(true);
+            }}
+          />
+        )}
       </main>
     );
   }

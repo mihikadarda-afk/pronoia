@@ -13,7 +13,7 @@ function TimeInput({ value, onChange, label }: { value: string; onChange: (v: st
 export function Alerts() {
   const s = useAppState();
   const { alerts: a, checkInSettings: c } = s;
-  const { caregiver, parent, refiller } = usePeople();
+  const { caregiver, parent } = usePeople();
   const [newTime, setNewTime] = useState('13:00');
   const up = (p: Partial<typeof a>) => deviceService.updateAlerts(p);
   const upC = (p: Partial<typeof c>) => deviceService.updateCheckInSettings(p);
@@ -116,29 +116,22 @@ export function Alerts() {
                 <span className="lrow-title block">1. Chime again, louder</span>
                 <span className="lrow-sub block">On {parent.name}’s phone{device ? ' and the dispenser' : ''}</span>
               </span>
-              <Stepper label="chime again delay" value={c.repeatMin} min={5} max={c.refillerMin - 5} onChange={(v) => upC({ repeatMin: v })} />
+              <Stepper label="chime again delay" value={c.repeatMin} min={5} max={c.caregiverMin - 5} onChange={(v) => upC({ repeatMin: v })} />
             </li>
             <li className="row-between" style={{ padding: '10px 0' }}>
               <span className="grow">
-                <span className="lrow-title block">2. Notify {refiller?.name ?? 'the refiller'}</span>
-                <span className="lrow-sub block">{refiller ? `${refiller.relation}, nearby in ${refiller.city || where}` : 'Invite someone nearby in Family'}</span>
+                <span className="lrow-title block">2. Notify {caregivers.map((p) => p.name).join(' and ')}</span>
+                <span className="lrow-sub block">If there’s still no tap. Ignores quiet hours.</span>
               </span>
-              <Stepper label="refiller delay" value={c.refillerMin} min={c.repeatMin + 5} max={c.caregiverMin - 5} onChange={(v) => upC({ refillerMin: v })} />
-            </li>
-            <li className="row-between" style={{ padding: '10px 0' }}>
-              <span className="grow">
-                <span className="lrow-title block">3. Notify {caregivers.map((p) => p.name).join(' and ')}</span>
-                <span className="lrow-sub block">If {refiller?.name ?? 'nobody'} hasn’t replied OK. Ignores quiet hours.</span>
-              </span>
-              <Stepper label="caregiver delay" value={c.caregiverMin} min={c.refillerMin + 5} max={180} onChange={(v) => upC({ caregiverMin: v })} />
+              <Stepper label="caregiver delay" value={c.caregiverMin} min={c.repeatMin + 5} max={180} onChange={(v) => upC({ caregiverMin: v })} />
             </li>
           </ol>
           <p className="small muted" style={{ marginTop: 8 }}>
-            I need help skips every step and tells {refiller ? `${refiller.name} and ` : ''}every caregiver right away.
+            I need help skips every step and tells every caregiver right away.
           </p>
         </>
       ) : (
-        <Locked plan="phone">Get {refiller?.name ?? 'the refiller'} and you alerted if {parent.name} misses a check-in.</Locked>
+        <Locked plan="phone">Get alerted if {parent.name} misses a check-in.</Locked>
       )}
 
       <SectionHead title="Summaries and refills" />
@@ -149,7 +142,7 @@ export function Alerts() {
         <li>
           <Toggle
             label="Refill reminders"
-            hint={device ? `To ${refiller?.name ?? 'the refiller'}, ${a.refillLeadDays} days before a slot runs out` : `To ${refiller?.name ?? 'the refiller'}, once a month`}
+            hint={device ? `To you, ${a.refillLeadDays} days before a slot runs out` : 'To you, once a month'}
             checked={a.refillReminders}
             onChange={(v) => up({ refillReminders: v })}
           />

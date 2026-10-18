@@ -5,7 +5,7 @@ import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { useAppState } from '../../services/useApp';
 
-/** "I need help": one confirm tap, then an urgent notification to every caregiver and the refiller nearby. */
+/** "I need help": one confirm tap, then an urgent notification to every caregiver. */
 export function NeedHelp() {
   const s = useAppState();
   const t = useT();
@@ -13,7 +13,7 @@ export function NeedHelp() {
   const [sentTo, setSentTo] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const helpers = s.people.filter((p) => p.status === 'active' && (p.role === 'caregiver' || p.role === 'refiller')).map((p) => p.name);
+  const helpers = s.people.filter((p) => p.status === 'active' && p.role === 'caregiver').map((p) => p.name);
   const list = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} ${t.and} ${names[names.length - 1]}` : (names[0] ?? ''));
 
   if (sentTo) {

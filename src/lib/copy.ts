@@ -7,7 +7,7 @@ export type Tone = 'good' | 'warn' | 'bad' | 'due' | 'quiet';
 export const purposeShort = (purpose: string) => (purpose === 'Blood pressure' ? 'BP' : purpose.toLowerCase() || 'pill');
 
 /** "BP pill", "diabetes pill". */
-export const pillName = (purpose: string) => `${purposeShort(purpose)} pill`;
+export const pillName = (purpose: string) => (purpose ? `${purposeShort(purpose)} pill` : 'pill');
 
 const doseTone: Record<DoseStatus, Tone> = {
   taken: 'good',
@@ -70,7 +70,6 @@ export const doseSub = (d: Dose) => `${d.medicine.name} ${d.medicine.strength}`.
 
 const checkTone: Record<CheckInStatus, Tone> = {
   checked_in: 'good',
-  refiller_ok: 'good',
   missed_notified: 'bad',
   missed: 'bad',
   help: 'bad',
@@ -79,13 +78,11 @@ const checkTone: Record<CheckInStatus, Tone> = {
   upcoming: 'quiet',
 };
 
-export function checkInStatus(c: CheckIn, refiller: string | undefined, tz: string): { tone: Tone; text: string } {
-  const r = refiller ?? 'Refiller';
+export function checkInStatus(c: CheckIn, tz: string): { tone: Tone; text: string } {
   const until = c.record?.pausedUntil ? fmtTime(new Date(c.record.pausedUntil), tz) : '';
   const text: Record<CheckInStatus, string> = {
     checked_in: 'Checked in',
-    refiller_ok: `${r} checked: okay`,
-    missed_notified: `Missed, ${r} notified`,
+    missed_notified: 'Missed, you were notified',
     missed: 'Missed',
     help: 'Asked for help',
     paused: until ? `Out until ${until}` : 'Paused',
@@ -95,13 +92,11 @@ export function checkInStatus(c: CheckIn, refiller: string | undefined, tz: stri
   return { tone: checkTone[c.status], text: text[c.status] };
 }
 
-export function checkInTitle(c: CheckIn, parent: string, refiller: string | undefined, tz: string): string {
+export function checkInTitle(c: CheckIn, parent: string, tz: string): string {
   const at = c.record?.at ? fmtTime(new Date(c.record.at), tz) : '';
   switch (c.status) {
     case 'checked_in':
       return c.record?.events.some((e) => e.label.startsWith('Said hi from the app')) ? `${parent} said hi at ${at}` : `${parent} checked in at ${at}`;
-    case 'refiller_ok':
-      return `${refiller ?? 'The refiller'} checked on ${parent}`;
     case 'missed_notified':
     case 'missed':
       return `${parent} didn’t check in`;
@@ -117,7 +112,6 @@ export function checkInTitle(c: CheckIn, parent: string, refiller: string | unde
 }
 
 export function checkInSub(c: CheckIn): string {
-  if (c.status === 'refiller_ok' && c.record?.note) return c.record.note;
   if (c.status === 'paused') return c.record?.events[0]?.label.includes('Nap') ? 'Napping' : 'Going out';
   if (c.record?.smile) return 'Sent a smile';
   if (c.status === 'upcoming' || c.status === 'due') return 'Pebble says hi';

@@ -124,7 +124,7 @@ export function Station() {
             <Row label="Code">{d.deviceCode}</Row>
             <Row label="Firmware">{d.firmware || '–'}</Row>
           </ul>
-          <Placeholder>Defective dispensers are replaced as part of the Device plan.</Placeholder>
+          <Placeholder>Defective dispensers are replaced as part of the Dispenser plan.</Placeholder>
         </>
       )}
     </main>

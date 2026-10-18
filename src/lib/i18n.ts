@@ -65,7 +65,6 @@ const strings = {
     // joining
     imParent: "I'm the parent",
     imStation: 'This is the dose station',
-    imRefiller: "I'm helping with refills",
     imFamily: "I'm family (caregiver)",
     enterCode: 'Type the family code',
     codeHint: 'Your family sent you a code like PEB-4K7',
@@ -152,7 +151,6 @@ const strings = {
     sentTo: (n: string) => `${n} को भेज दिया`,
     imParent: 'मैं माता/पिता हूँ',
     imStation: 'यह दवा का स्टेशन है',
-    imRefiller: 'मैं दवा भरने में मदद करता/करती हूँ',
     imFamily: 'मैं परिवार से हूँ',
     enterCode: 'परिवार का कोड लिखें',
     codeHint: 'आपके परिवार ने PEB-4K7 जैसा कोड भेजा है',
@@ -237,7 +235,6 @@ const strings = {
     sentTo: (n: string) => `${n}ને મોકલ્યું`,
     imParent: 'હું માતા/પિતા છું',
     imStation: 'આ દવાનું સ્ટેશન છે',
-    imRefiller: 'હું દવા ભરવામાં મદદ કરું છું',
     imFamily: 'હું પરિવારમાંથી છું',
     enterCode: 'પરિવારનો કોડ લખો',
     codeHint: 'તમારા પરિવારે PEB-4K7 જેવો કોડ મોકલ્યો છે',

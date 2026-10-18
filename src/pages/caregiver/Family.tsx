@@ -7,12 +7,11 @@ import { useAppState, useNow } from '../../services/useApp';
 import type { Person } from '../../services/types';
 
 const roleLabel = (p: Person) =>
-  p.role === 'parent' ? 'Parent' : p.role === 'refiller' ? 'Refills, first to check in' : p.isOwner ? 'Caregiver, owner' : 'Caregiver';
+  p.role === 'parent' ? 'Parent' : p.isOwner ? 'Caregiver, owner' : 'Caregiver';
 
 const sees: Record<Person['role'], string> = {
   caregiver: 'Sees every dose and check-in, reviews dose videos, gets alerts.',
   parent: 'Sees the next pill, taps I took it and I’m okay, and gets your hearts.',
-  refiller: 'Gets refill reminders, and is asked first to look in if a check-in is missed. No dose history.',
   station: 'The old phone by the pill box. Shows pills and checks doses.',
 };
 
@@ -40,7 +39,7 @@ export function Family() {
                   <Avatar person={p} />
                   <span className="grow">
                     <span className="lrow-title block">{p.name}</span>
-                    <span className="lrow-sub block">Wants to join as {p.role === 'refiller' ? 'refill helper' : p.role}</span>
+                    <span className="lrow-sub block">Wants to join as {p.role}</span>
                   </span>
                   <span className="row" style={{ gap: 8 }}>
                     <button className="btn btn--secondary btn--small" onClick={() => { deviceService.removePerson(p.id); toast(`Declined ${p.name}`); }}>

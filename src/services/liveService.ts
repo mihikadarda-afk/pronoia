@@ -22,7 +22,7 @@ import type {
   Role,
   StationStatus,
 } from './types';
-import { defaultCheckInSettings, defaultNotifications } from './mockData';
+import { DEFAULT_ALERTS, STATE_VERSION, blankPerson, defaultCheckInSettings, defaultNotifications, emptyState } from './defaults';
 import { normalizeEvents, presetEvents, type Preset } from './notifications';
 import { BaseService, normalizeCode, type AuthState, type DeviceService, type NewCircle } from './service';
 import { setAiTokenSource } from './aiCheck';
@@ -30,16 +30,6 @@ import { zonedDate } from '../lib/time';
 
 const ONLINE_WITHIN_MS = 10 * 60_000;
 const PENDING_KEY = 'pronoia.pendingCaregiver';
-const DEFAULT_ALERTS: AlertSettings = {
-  parentReminderMin: 10,
-  caregiverAlertMin: 30,
-  quietStart: '23:00',
-  quietEnd: '07:00',
-  reviewBelow: 70,
-  refillLeadDays: 10,
-  weeklySummary: true,
-  refillReminders: true,
-};
 
 // Rows as they come from the database.
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -116,45 +106,15 @@ const outboxFromRow = (m: Row): OutboxMessage => ({
   kind: m.kind ?? undefined,
 });
 
-const blankPerson = (id: string, role: Role): Person => ({
-  id,
-  name: '',
-  role,
-  relation: '',
-  whatsapp: '',
-  city: '',
-  timeZone: role === 'parent' ? 'Asia/Kolkata' : 'America/New_York',
-  status: 'active',
-  appAccess: true,
-});
-
-/** A harmless state for screens that render before data arrives. */
-function emptyState(): AppState {
-  return {
-    version: 3,
-    circleName: '',
-    caregiverId: 'me',
-    parentId: 'parent',
-    people: [blankPerson('me', 'caregiver'), blankPerson('parent', 'parent')],
-    code: { code: '', createdAt: 0, expiresAt: 0, used: true },
-    medicines: [],
-    records: [],
-    checkIns: [],
-    checkInSettings: defaultCheckInSettings(),
-    pause: null,
-    familyNotes: [],
-    photos: [],
-    photoSettings: { times: ['11:00', '18:00'], windowMin: 120 },
-    refillLog: [],
-    alerts: DEFAULT_ALERTS,
-    notifications: defaultNotifications(),
-    device: { paired: false, deviceCode: '', online: false, wifiDbm: 0, camera: 'off', lastSync: 0, firmware: '' },
-    station: { linked: false, online: false, battery: 0, charging: false, camera: 'ready', lastSeen: 0 },
-    notices: [],
-    outbox: [],
-    plan: { tier: 'free', billing: 'monthly', since: Date.now() },
-    updatedAt: 0,
-  };
+/** Supabase's sign-in errors, in plain words. */
+function friendlyAuthError(m: string): string {
+  if (/invalid login credentials/i.test(m)) return 'That email and password don’t match. Try again, or reset your password.';
+  if (/email not confirmed/i.test(m)) return 'Open the link we emailed you to confirm your address, then log in.';
+  if (/already registered|already exists/i.test(m)) return 'There’s already an account with this email. Log in instead.';
+  if (/password should be at least/i.test(m)) return 'Use at least 8 characters for your password.';
+  if (/rate limit/i.test(m)) return 'Too many tries. Wait a minute and try again.';
+  if (/failed to fetch|network/i.test(m)) return 'Can’t reach Pronoia right now. Check your internet connection and try again.';
+  return m;
 }
 
 function message(e: unknown): string {
@@ -172,6 +132,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   private sb: SupabaseClient;
   private state: AppState = emptyState();
   private authState: AuthState = { status: 'loading' };
+  /** Opened from a reset-password email: ask for a new password first. */
+  private recovering = false;
   private session: Session | null = null;
   private circleId: string | null = null;
   private recordIds = new Map<string, string>(); // dose id -> database id
@@ -187,11 +149,16 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   constructor(url: string, key: string) {
     super();
-    this.sb = createClient(url, key);
+    // PKCE keeps email links (confirm, reset password) in the query string, clear of the #/ routes.
+    this.sb = createClient(url, key, { auth: { flowType: 'pkce' } });
     setAiTokenSource(async () => (await this.sb.auth.getSession()).data.session?.access_token);
     this.sb.auth.onAuthStateChange((event, session) => {
       const changedUser = session?.user.id !== this.session?.user.id;
       this.session = session;
+      if (event === 'PASSWORD_RECOVERY') {
+        this.recovering = true;
+        this.setAuth(this.authState);
+      }
       // Defer: supabase-js can deadlock if queries start inside this callback.
       if (event === 'INITIAL_SESSION' || changedUser) window.setTimeout(() => this.reload(), 0);
     });
@@ -233,7 +200,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   }
 
   private setAuth(next: AuthState) {
-    this.authState = next;
+    this.authState = { ...next, recovering: this.recovering || undefined };
     this.emit();
   }
 
@@ -314,11 +281,10 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       this.setAuth({ status: 'pending', role: me.role, caregiverName, ...base });
       return;
     }
-    if (me.role === 'refiller') {
-      // Refillers only get their own notifications: refill reminders and missed check-ins.
-      const mineOnly = await this.call(this.sb.from('outbox').select('*').eq('to_member', me.id).order('at', { ascending: false }).limit(50));
-      this.state = { ...emptyState(), people: [personFromRow(me)], outbox: (mineOnly as Row[]).map(outboxFromRow) };
-      this.setAuth({ status: 'ready', role: 'refiller', memberId: me.id, ...base });
+    if (me.role !== 'caregiver' && me.role !== 'parent' && me.role !== 'station') {
+      // Refill helpers are no longer part of the app.
+      this.unwatch();
+      this.setAuth({ status: 'signed-out' });
       return;
     }
 
@@ -394,7 +360,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
         id,
         dayOffset,
         time: r.time,
-        status: r.status,
+        status: r.status === 'refiller_ok' ? 'checked_in' : r.status,
         at: r.at ? Date.parse(r.at) : undefined,
         events: r.events ?? [],
         pausedUntil: r.paused_until ? Date.parse(r.paused_until) : undefined,
@@ -420,11 +386,12 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     });
 
     this.state = {
-      version: 3,
+      version: STATE_VERSION,
+      startedAt: circle ? Date.parse(circle.created_at) : 0,
       circleName: circle?.name ?? '',
       caregiverId: me.role === 'caregiver' ? me.id : (owner?.id ?? me.id),
       parentId: parent?.id ?? 'parent',
-      people: (parent ? people : [...people, blankPerson('parent', 'parent')]).filter((p) => p.role !== 'station'),
+      people: (parent ? people : [...people, blankPerson('parent', 'parent')]).filter((p) => p.role === 'caregiver' || p.role === 'parent'),
       code: code
         ? { code: code.code, createdAt: Date.parse(code.created_at), expiresAt: Date.parse(code.expires_at), used: code.used }
         : { code: '', createdAt: 0, expiresAt: 0, used: true },
@@ -492,14 +459,28 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   // ---- accounts ----
 
-  async sendEmailCode(email: string) {
-    const { error } = await this.sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-    if (error) throw new Error(error.message);
+  async signUp(email: string, password: string) {
+    const { data, error } = await this.sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+    if (error) throw new Error(friendlyAuthError(error.message));
+    // With "Confirm email" on in Supabase, there's no session until the link in the email is opened.
+    return { needsConfirm: !data.session };
   }
 
-  async verifyEmailCode(email: string, code: string) {
-    const { error } = await this.sb.auth.verifyOtp({ email, token: code.trim(), type: 'email' });
-    if (error) throw new Error(error.message);
+  async signIn(email: string, password: string) {
+    const { error } = await this.sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(friendlyAuthError(error.message));
+  }
+
+  async resetPassword(email: string) {
+    const { error } = await this.sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    if (error) throw new Error(friendlyAuthError(error.message));
+  }
+
+  async setNewPassword(password: string) {
+    const { error } = await this.sb.auth.updateUser({ password });
+    if (error) throw new Error(friendlyAuthError(error.message));
+    this.recovering = false;
+    this.setAuth(this.authState);
   }
 
   async signOut() {
@@ -690,19 +671,6 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   // ---- refills ----
 
-  remindRefiller() {
-    const refiller = this.state.people.find((p) => p.role === 'refiller' && p.status === 'active');
-    if (!refiller) return;
-    const parent = this.state.people.find((p) => p.id === this.state.parentId);
-    const device = this.state.plan.tier === 'device';
-    const low = this.state.medicines.filter((m) => this.slotHealth(m) !== 'ok');
-    const list = low.length ? low.map((m) => (device ? `slot ${m.slot} (${m.name})` : m.name)).join(', ') : 'all medicines';
-    this.notify(
-      refiller.id,
-      `Hi ${refiller.name}, Pebble here 💚 ${parent?.name ?? 'The'}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`,
-    );
-  }
-
   logRefill(slots: number[]) {
     this.write(this.sb.rpc('log_refill', { p_circle: this.circleId, p_slots: slots }));
   }
@@ -717,11 +685,6 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     if (!this.inbox(personId).some((m) => !m.read)) return;
     this.patch({ outbox: this.state.outbox.map((m) => (m.toId === personId ? { ...m, read: true } : m)) });
     this.write(this.sb.rpc('mark_inbox_read'));
-  }
-
-  /** `ref` is the check-in's database id, carried on the refiller's notification. */
-  replyOk(ref: string, note?: string) {
-    this.write(this.sb.rpc('refiller_reply_ok', { p_check_in: ref, p_note: note ?? null }));
   }
 
   nudgeParent(text: string) {

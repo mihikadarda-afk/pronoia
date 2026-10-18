@@ -15,7 +15,7 @@ const healthText: Record<SlotHealth, [string, 'good' | 'warn' | 'bad' | 'quiet']
 
 export function Medicines() {
   const s = useAppState();
-  const { parent, refiller } = usePeople();
+  const { parent } = usePeople();
   const device = s.plan.tier === 'device';
   const free = [1, 2, 3, 4, 5].find((n) => !s.medicines.some((m) => m.slot === n));
   const problems = s.medicines.filter((m) => ['empty', 'stuck'].includes(deviceService.slotHealth(m)));
@@ -65,7 +65,7 @@ export function Medicines() {
                 Slot {m.slot} ({m.name}) {m.stuck ? 'seems stuck' : 'is empty'}.
               </strong>
               <span className="block small">
-                {m.stuck ? `Ask ${refiller?.name ?? 'someone nearby'} to open the lid and free the pill.` : `It needs a refill before the next dose.`}
+                {m.stuck ? `Open the lid and free the pill, or ask someone nearby to.` : `It needs a refill before the next dose.`}
               </span>
             </div>
           ))}
@@ -113,7 +113,6 @@ export function Medicines() {
                 <span className="lrow-title block">Refills</span>
                 <span className="lrow-sub block">
                   Next by {fmtDate(deviceService.refillInfo(next).refillBy, parent.timeZone)}
-                  {refiller ? ` · ${refiller.name}` : ''}
                 </span>
               </span>
               <Chevron />

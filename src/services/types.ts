@@ -1,7 +1,7 @@
 // Shared domain types. The UI only talks to these shapes, so the demo service
 // can be swapped for the live one (Supabase, the Raspberry Pi dispenser, the dose station).
 
-export type Role = 'caregiver' | 'parent' | 'refiller' | 'station';
+export type Role = 'caregiver' | 'parent' | 'station';
 export type Lang = 'en' | 'hi' | 'gu';
 
 /** Free: reminders and taps. Phone: an old phone as a dose station with an AI check. Device: the dispenser. */
@@ -20,8 +20,7 @@ export type DoseStatus =
 
 export type CheckInStatus =
   | 'checked_in'
-  | 'missed_notified' // missed, refiller told
-  | 'refiller_ok' // the refiller checked and replied OK
+  | 'missed_notified' // missed, caregivers told
   | 'missed' // Free plan: missed, nobody alerted
   | 'paused' // "I'm going out" or "Nap"
   | 'help' // pressed "I need help"
@@ -117,7 +116,6 @@ export interface CheckInRecord {
   at?: number;
   events: TimedEvent[];
   pausedUntil?: number;
-  /** The refiller's reply, e.g. "He was at the temple". */
   note?: string;
   smile?: boolean;
   /** The family's reply to this check-in. */
@@ -138,8 +136,7 @@ export interface CheckInSettings {
   sleepStart: string; // parent-local
   sleepEnd: string;
   repeatMin: number; // chime again, louder
-  refillerMin: number; // notify the refiller
-  caregiverMin: number; // notify the caregivers if the refiller hasn't replied
+  caregiverMin: number; // notify the caregivers
 }
 
 export interface Pause {
@@ -287,6 +284,8 @@ export interface PhotoSettings {
 
 export interface AppState {
   version: number;
+  /** When the family was set up: nothing scheduled before this counts as due or missed. */
+  startedAt: number;
   circleName: string;
   caregiverId: string;
   parentId: string;

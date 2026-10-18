@@ -45,6 +45,8 @@ export interface AuthState {
   caregiverName?: string;
   /** Live: the signed-in person's member id (for their inbox). */
   memberId?: string;
+  /** Opened from a reset-password email. */
+  recovering?: boolean;
 }
 
 export interface NewCircle {
@@ -60,8 +62,8 @@ export type TimelineItem =
 
 /**
  * The single seam between the UI and everything outside it: the dispenser,
- * the dose station, the AI check and notifications. `MockDeviceService` keeps a
- * demo family in the browser; `LiveDeviceService` talks to Supabase.
+ * the dose station, the AI check and notifications. `MockDeviceService` keeps the
+ * family in this browser; `LiveDeviceService` talks to Supabase.
  */
 export interface DeviceService {
   readonly mode: 'local' | 'live';
@@ -71,8 +73,11 @@ export interface DeviceService {
 
   // Accounts
   auth(): AuthState;
-  sendEmailCode(email: string): Promise<void>;
-  verifyEmailCode(email: string, code: string): Promise<void>;
+  /** A new caregiver account. `needsConfirm` when the email address must be confirmed first. */
+  signUp(email: string, password: string): Promise<{ needsConfirm: boolean }>;
+  signIn(email: string, password: string): Promise<void>;
+  resetPassword(email: string): Promise<void>;
+  setNewPassword(password: string): Promise<void>;
   signOut(): Promise<void>;
   createCircle(input: NewCircle): Promise<void>;
   onError(fn: (message: string) => void): () => void;
@@ -128,7 +133,6 @@ export interface DeviceService {
   setCircleName(name: string): void;
 
   // Refills
-  remindRefiller(): void;
   logRefill(slots: number[]): void;
 
   // Notifications and messages
@@ -136,8 +140,6 @@ export interface DeviceService {
   notify(toPersonId: string, text: string, opts?: Pick<OutboxMessage, 'kind' | 'ref' | 'wake'>): void;
   inbox(personId: string): OutboxMessage[];
   markInboxRead(personId: string): void;
-  /** The refiller looked in on the parent after a missed check-in. */
-  replyOk(checkInId: string, note?: string): void;
   /** A short note from the family, shown on the parent's phone. */
   nudgeParent(text: string): void;
   /** Background notifications: the phone's push subscription (live only). */
@@ -151,7 +153,7 @@ export interface DeviceService {
   markPhotosSeen(): void;
   updatePhotoSettings(patch: Partial<PhotoSettings>): void;
   parentMessage(kind: 'ok' | 'call'): void;
-  /** Urgent: tells every caregiver and the refiller. Returns who was told. */
+  /** Urgent: tells every caregiver. Returns who was told. */
   parentHelp(): Promise<string[]>;
   acknowledgeNotice(id: string): void;
   markNoticesRead(): void;
@@ -201,6 +203,7 @@ export abstract class BaseService {
         const scheduledAt = instantFor(now, tz, dayOffset, time);
         let status: DoseStatus;
         if (record) status = record.status;
+        else if (scheduledAt.getTime() < s.startedAt) continue; // before the family was set up
         else if (dayOffset === 0) status = scheduledAt <= now ? 'due' : 'upcoming';
         else continue; // no data for this past dose (e.g. medicine added later)
         doses.push({
@@ -248,7 +251,7 @@ export abstract class BaseService {
       const scheduledAt = instantFor(now, tz, dayOffset, time);
       let status: CheckInStatus;
       if (record) status = record.status;
-      else if (dayOffset < 0) continue;
+      else if (dayOffset < 0 || scheduledAt.getTime() < s.startedAt) continue;
       else if (dayOffset > 0 || scheduledAt > now) status = 'upcoming';
       else if (s.pause && s.pause.from <= scheduledAt.getTime() && s.pause.until > scheduledAt.getTime()) status = 'paused';
       else status = 'due';
@@ -275,6 +278,7 @@ export abstract class BaseService {
       const opened = scheduledAt;
       let status: PhotoMoment['status'];
       if (record?.photo) status = 'sent';
+      else if (!record && opened.getTime() < s.startedAt) continue;
       else if (opened > now) {
         if (dayOffset < 0) continue;
         status = 'upcoming';

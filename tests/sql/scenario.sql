@@ -13,8 +13,10 @@ select create_circle('Nanaji''s circle', '{"name":"Mihika","time_zone":"America/
 update circles set plan = '{"tier":"phone","billing":"monthly"}' where id = :'cid';
 select code from family_codes where circle_id = :'cid' and not used \gset
 reset role;
+-- The family was set up yesterday, so today's earlier doses and check-ins count
+update circles set created_at = now() - interval '1 day';
 
--- Parent, then the dose station, then Ravi join with codes; Mihika approves each
+-- Parent, then the dose station join with codes; Mihika approves each. Refill helpers can't join.
 select pg_temp.as_user(2); set role authenticated;
 select join_with_code(:'code', 'parent', '') as parent_id \gset
 reset role; select pg_temp.as_user(1); set role authenticated;
@@ -26,27 +28,31 @@ reset role; select pg_temp.as_user(1); set role authenticated;
 select approve_member(:'station_id');
 select regenerate_code(:'cid') as code3 \gset
 reset role; select pg_temp.as_user(4); set role authenticated;
-select join_with_code(:'code3', 'refiller', 'Ravi') as ravi_id \gset
+do $$ begin
+  begin
+    perform join_with_code((select code from family_codes where not used order by created_at desc limit 1), 'refiller', 'Ravi');
+    raise exception 'joined as a refiller';
+  exception when raise_exception then
+    if sqlerrm <> 'Unknown role.' then raise; end if;
+  end;
+end $$;
 reset role; select pg_temp.as_user(1); set role authenticated;
-select approve_member(:'ravi_id');
 insert into medicines (circle_id, slot, name, nickname, times) values (:'cid', 1, 'Telmisartan', 'white BP tablet', array[pg_temp.ago(5), pg_temp.ago(40)]);
 update circles set checkins = jsonb_set(checkins, '{times}', jsonb_build_array(pg_temp.ago(50), pg_temp.ago(1))) || '{"sleepStart":"23:59","sleepEnd":"00:00"}' where id = :'cid';
 reset role;
 
--- The clock: check-in 50 min ago escalates to Ravi and then Mihika
+-- The clock: check-in 50 min ago escalates straight to Mihika
 select escalate_check_ins() as escalated;
 do $$ declare st text; n int; begin
   select status into st from check_ins where time = pg_temp.ago(50);
   assert st = 'missed_notified', 'check-in should be missed_notified, got ' || coalesce(st, 'null');
-  select count(*) into n from outbox where to_name = 'Ravi' and text like '%hasn''t checked in since%';
-  assert n = 1, 'Ravi should get one WhatsApp, got ' || n;
-  select count(*) into n from outbox where to_name = 'Mihika' and text like '%Please call%' and wake;
-  assert n = 1, 'Mihika should get one waking WhatsApp, got ' || n;
+  select count(*) into n from outbox where to_name = 'Mihika' and text like '%hasn''t checked in since%. Please call.' and wake;
+  assert n = 1, 'Mihika should get one waking notification, got ' || n;
 end $$;
 select escalate_check_ins() as escalated_again;
 do $$ declare n int; begin
   select count(*) into n from outbox where text like '%hasn''t checked in since%';
-  assert n = 2, 'escalation must not repeat, got ' || n;
+  assert n = 1, 'escalation must not repeat, got ' || n;
 end $$;
 
 -- The parent taps I'm okay for that check-in
@@ -89,11 +95,11 @@ do $$ begin
   assert (select frames ->> 'state' from dose_records where time = pg_temp.ago(40)) = 'deleted';
 end $$;
 
--- Ravi (refiller) can't read check-ins or doses
+-- Someone outside the circle can't read check-ins or doses
 select pg_temp.as_user(4); set role authenticated;
 do $$ begin
-  assert (select count(*) from check_ins) = 0, 'refiller must not see check-ins';
-  assert (select count(*) from dose_records) = 0, 'refiller must not see doses';
+  assert (select count(*) from check_ins) = 0, 'outsider must not see check-ins';
+  assert (select count(*) from dose_records) = 0, 'outsider must not see doses';
 end $$;
 -- ...and the station can't change the plan
 reset role; select pg_temp.as_user(3); set role authenticated;
@@ -116,7 +122,7 @@ do $$ begin assert (select status from dose_records where time = pg_temp.ago(40)
 
 -- Help from the station alerts everyone
 select pg_temp.as_user(3); set role authenticated; select parent_help(); reset role;
-do $$ begin assert (select count(*) from outbox where text like '🆘 Nanaji pressed I need help%') >= 2; end $$;
+do $$ begin assert (select count(*) from outbox where to_name = 'Mihika' and text like '🆘 Nanaji pressed I need help%') = 1; end $$;
 -- Device plan: the dispenser's clip comes back through the server with its code and secret
 update circles set plan = '{"tier":"device"}';
 select provision_device('PRN-TEST-01', 'sekret');
@@ -142,28 +148,18 @@ do $$ begin
 end $$;
 reset role;
 
--- In-app notifications: Ravi sees only his own, and replies OK from one
+-- In-app notifications: every alert is in-app, and Mihika reads her own
 update circles set plan = '{"tier":"phone"}', pause = null,
-  checkins = jsonb_set(checkins, '{times}', jsonb_build_array(pg_temp.ago(50), pg_temp.ago(1), pg_temp.ago(30)));
+  checkins = jsonb_set(checkins, '{times}', jsonb_build_array(pg_temp.ago(50), pg_temp.ago(1), pg_temp.ago(35)));
 select escalate_check_ins();
 do $$ begin
   assert (select count(*) from outbox where channel <> 'push') = 0, 'every notification is in-app';
-  assert (select ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1) is not null, 'Ravi''s notification points at the check-in';
+  assert (select ref from outbox where to_name = 'Mihika' and kind = 'checkin' order by at desc limit 1) is not null, 'the notification points at the check-in';
 end $$;
-select ref as ravi_ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1 \gset
-select pg_temp.as_user(4); set role authenticated;
-do $$ begin
-  assert (select count(*) from outbox) >= 1 and (select count(*) from outbox where to_name <> 'Ravi') = 0, 'Ravi reads only his own notifications';
-end $$;
-select refiller_reply_ok(:'ravi_ref'::uuid, 'He was at the temple');
+select pg_temp.as_user(1); set role authenticated;
 select mark_inbox_read();
 reset role;
-do $$ begin
-  assert (select status from check_ins where id = (select ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1)::uuid) = 'refiller_ok';
-  assert (select note from check_ins where status = 'refiller_ok' limit 1) = 'He was at the temple';
-  assert (select bool_and(read) from outbox where to_name = 'Ravi'), 'Ravi''s inbox is read';
-  assert (select count(*) from outbox where to_name = 'Mihika' and text like 'Ravi checked on Nanaji: okay. He was at the temple%') = 1, 'Mihika hears Ravi checked';
-end $$;
+do $$ begin assert (select bool_and(read) from outbox where to_name = 'Mihika'), 'Mihika''s inbox is read'; end $$;
 
 -- Smile time: Mihika asks, Nanaji sends a photo, Mihika is told
 select pg_temp.as_user(1); set role authenticated;
@@ -186,7 +182,7 @@ do $$ declare oid uuid; begin
   assert (select endpoint from push_targets(oid)) = 'https://push.example.com/abc';
 end $$;
 select pg_temp.as_user(4); set role authenticated;
-do $$ begin assert (select count(*) from photo_moments) = 0, 'refiller can''t see photos'; end $$;
+do $$ begin assert (select count(*) from photo_moments) = 0, 'outsider can''t see photos'; end $$;
 reset role;
 
 -- The dispenser's buttons
@@ -196,8 +192,20 @@ select device_button('PRN-TEST-01', 'sekret', 'help');
 reset role;
 do $$ begin
   assert (select count(*) from check_ins where events::text like '%I''m okay button%') = 1, 'button check-in';
-  assert (select count(*) from outbox where text like '%pressed I need help on the dispenser%') >= 2, 'button help reaches everyone';
+  assert (select count(*) from outbox where text like '%pressed I need help on the dispenser%') >= 1, 'button help reaches the caregivers';
 end $$;
 
 select purge_old_frames();
+
+-- A family set up just now isn't alerted about doses or check-ins from earlier today
+update circles set created_at = now(), plan = '{"tier":"phone"}', pause = null,
+  checkins = jsonb_set(checkins, '{times}', jsonb_build_array(pg_temp.ago(90)));
+update medicines set times = array[pg_temp.ago(120)];
+delete from dose_records; delete from check_ins; delete from outbox;
+select mark_missed_doses(), escalate_check_ins();
+do $$ begin
+  assert (select count(*) from dose_records) = 0, 'no missed dose before the family existed';
+  assert (select count(*) from check_ins) = 0, 'no missed check-in before the family existed';
+  assert (select count(*) from outbox) = 0, 'nobody alerted';
+end $$;
 \echo ALL GOOD
