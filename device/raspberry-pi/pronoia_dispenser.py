@@ -155,8 +155,9 @@ class Server:
 
     def rpc(self, fn: str, args: dict, timeout: int = 20):
         key = self.cfg.supabase_anon_key
-        return self._post(f"{self.cfg.supabase_url}/rest/v1/rpc/{fn}", args,
-                          {"apikey": key, "Authorization": f"Bearer {key}"}, timeout)
+        # Newer keys (sb_publishable_...) go in apikey only; older JWT anon keys also in Authorization.
+        headers = {"apikey": key} if key.startswith("sb_") else {"apikey": key, "Authorization": f"Bearer {key}"}
+        return self._post(f"{self.cfg.supabase_url}/rest/v1/rpc/{fn}", args, headers, timeout)
 
     def event(self, event: dict):
         """device_event, queued for later if the network is down."""

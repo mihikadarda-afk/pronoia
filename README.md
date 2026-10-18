@@ -91,15 +91,16 @@ Without the Supabase variables the site keeps everything on each visitor’s pho
 ### 1. Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Push the database:
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref <your-project-ref>
-   npx supabase db push
-   ```
-   This creates the tables, row-level security, the server functions and the missed-dose job.
-3. In the dashboard:
-   - **Database → Extensions**: check that **pg_cron** is on. Then in **Integrations → Cron** you should see `pronoia-missed-doses`. If it's missing, enable pg_cron and run the last `do $$ ... $$` block of the migration again.
+2. **Database → Extensions**: turn on **pg_cron** first, so the scheduled jobs get created.
+3. Create the database, either way:
+   - **SQL Editor**: paste and run each file in `supabase/migrations/`, oldest first (`20261008…`, then `20261018…`, then `20261020…`).
+   - Or the CLI: `npx supabase login`, `npx supabase link --project-ref <your-project-ref>`, `npx supabase db push`.
+
+   This creates the tables, row-level security, the server functions and the scheduled jobs.
+
+Either kind of API key works: the newer publishable and secret keys (`sb_publishable_…`, `sb_secret_…`), or the older anon and service_role keys.
+4. In the dashboard:
+   - **Integrations → Cron**: you should see `pronoia-missed-doses`, `pronoia-check-ins` and `pronoia-frames`. If they're missing, pg_cron wasn't on: turn it on and run the last `do $$ ... $$` block of the first two migrations again.
    - **Authentication → Sign In / Providers**: keep **Email** on and turn on **Allow anonymous sign-ins** (parents and refill helpers join with a code, not an email). Consider turning on CAPTCHA, since anonymous sign-ins are open to anyone.
    - **Authentication → Email Templates**: paste `supabase/templates/sign-in-code.html` into both **Magic Link** and **Confirm signup**, so the email shows the 6-digit code.
    - **Authentication → SMTP Settings**: set up your own email sender. The built-in one only sends a few emails an hour.
@@ -116,7 +117,6 @@ SUPABASE_URL=... SUPABASE_ANON_KEY=... GEMINI_API_KEY=... npm run serve
 
 The app uses hash routing, so `dist/` also works on any static host; the AI check then needs `npm run serve` running somewhere, with `VITE_API_URL` pointing at it.
 
-In **Integrations → Cron** you should also see `pronoia-check-ins` and `pronoia-frames` after pushing the second migration.
 
 ### 3. Dispensers
 

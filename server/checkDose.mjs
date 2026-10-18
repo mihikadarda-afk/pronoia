@@ -201,10 +201,18 @@ export async function supabaseUserOk(authorization) {
   return res.ok;
 }
 
+/**
+ * Supabase's newer keys (sb_publishable_…, sb_secret_…) go in the apikey header only; the older
+ * JWT keys (anon, service_role) also go in Authorization.
+ */
+export function supabaseKeyHeaders(key) {
+  return key?.startsWith('sb_') ? { apikey: key } : { apikey: key, Authorization: `Bearer ${key}` };
+}
+
 async function supabaseRpc(fn, args) {
   const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: process.env.SUPABASE_ANON_KEY, Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY}` },
+    headers: { 'Content-Type': 'application/json', ...supabaseKeyHeaders(process.env.SUPABASE_ANON_KEY) },
     body: JSON.stringify(args),
   });
   const body = await res.json().catch(() => null);

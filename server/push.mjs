@@ -4,6 +4,7 @@
 // Environment: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:you@example.com),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PUSH_WEBHOOK_SECRET (the same secret set on the webhook).
 import webpush from 'web-push';
+import { supabaseKeyHeaders } from './checkDose.mjs';
 
 const TITLES = { help: 'Pronoia: help needed', checkin: 'Pronoia: check-in', dose: 'Pronoia', photo: 'Pronoia: a photo arrived', refill: 'Pronoia: refills' };
 
@@ -16,7 +17,7 @@ async function rest(path, init = {}) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const res = await fetch(`${process.env.SUPABASE_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}`, ...(init.headers ?? {}) },
+    headers: { 'Content-Type': 'application/json', ...supabaseKeyHeaders(key), ...(init.headers ?? {}) },
   });
   if (!res.ok) throw new Error(`Supabase ${path} ${res.status}`);
   return res.status === 204 ? null : res.json();
