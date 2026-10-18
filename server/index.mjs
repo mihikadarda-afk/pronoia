@@ -15,6 +15,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HttpError, handleCheckDose, handleDeviceClip, hasApiKey, model, supabaseUserOk } from './checkDose.mjs';
+import { handlePush } from './push.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const DIST = resolve(here, '..', 'dist');
@@ -75,7 +76,7 @@ async function api(req, res) {
   const h = cors(req);
   if (req.method === 'OPTIONS') return send(res, 204, {}, h);
   if (req.url === '/api/health') return send(res, 200, { ok: true, ai: hasApiKey(), model: model() }, h);
-  const route = req.url === '/api/check-dose' ? 'check' : req.url === '/api/device-clip' ? 'device' : null;
+  const route = req.url === '/api/check-dose' ? 'check' : req.url === '/api/device-clip' ? 'device' : req.url === '/api/push' ? 'push' : null;
   if (!route || req.method !== 'POST') return send(res, 404, { error: 'Not found' }, h);
   let body;
   try {
@@ -85,7 +86,9 @@ async function api(req, res) {
   }
   const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
   const out =
-    route === 'device'
+    route === 'push'
+      ? await handlePush(body, req.headers['x-webhook-secret'])
+      : route === 'device'
       ? await handleDeviceClip(body, { ip })
       : await handleCheckDose(body, { ip, signedIn: () => supabaseUserOk(req.headers.authorization) });
   send(res, out.status, out.body, h);

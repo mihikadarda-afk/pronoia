@@ -74,7 +74,7 @@ export function Station() {
               <Row label="Last check-in">{relTime(st.lastSeen, now.getTime())}</Row>
             </ul>
             <p className="small muted" style={{ marginTop: 12 }}>
-              The camera only turns on at dose time. You’ll get a WhatsApp if the station goes offline or the battery runs low.
+              The camera only turns on at dose time. You’ll get a notification if the station goes offline or the battery runs low.
             </p>
           </>
         )}

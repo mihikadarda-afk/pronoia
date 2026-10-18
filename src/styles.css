@@ -139,8 +139,6 @@ li.attention--blush { background: var(--tint-blush); }
 .btn--secondary { background: var(--card); color: var(--ink); border-color: var(--line); }
 .btn--secondary:hover { background: #f3efe5; }
 .btn--danger { background: var(--card); color: var(--blush-ink); border-color: #ecc9bf; }
-.btn--whatsapp { background: #3f9a64; }
-.btn--whatsapp:hover { background: #358555; }
 .btn--block { width: 100%; }
 .btn--small { min-height: 34px; padding: 6px 12px; font-size: 14px; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -387,3 +385,12 @@ li.attention--blush { background: var(--tint-blush); }
 .ch-chip[aria-pressed='true'] { background: var(--sage-pale); border-color: var(--sage-light); color: var(--ink); }
 .ch-chip:focus-visible, .preset:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .dose-video { width: 100%; max-height: 360px; border-radius: 10px; background: #1f2721; display: block; }
+.bell { position: relative; display: grid; place-items: center; width: 34px; height: 30px; color: var(--ink); text-decoration: none; border-radius: 8px; }
+.bell:hover { background: rgba(58, 74, 58, 0.06); }
+.bell-count { position: absolute; top: -2px; right: -2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--blush-ink); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+.photo-ph { width: 40px; height: 40px; border-radius: 8px; border: 1px dashed #cfc9ba; display: grid; place-items: center; color: var(--ink-faint); }
+.gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.gallery-item { position: relative; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.gallery-item img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; display: block; border: 1px solid var(--line); }
+.gallery-cap { display: block; font-size: 11px; color: var(--ink-soft); margin-top: 3px; }
+.gallery-new { font-style: normal; color: var(--blush-ink); font-weight: 600; margin-left: 4px; }

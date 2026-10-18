@@ -8,15 +8,16 @@ import { useAppState, usePeople } from '../services/useApp';
 export function SignIn() {
   const { signIn } = useSession();
   const s = useAppState();
-  const { caregiver, parent } = usePeople();
+  const { caregiver, parent, refiller } = usePeople();
   const nav = useNavigate();
   const go = (role: SessionRole) => {
     signIn(role, role === 'parent' ? { parentLinked: true } : undefined);
-    nav(role === 'caregiver' ? '/care' : role === 'parent' ? '/parent' : '/station');
+    nav(role === 'caregiver' ? '/care' : role === 'parent' ? '/parent' : role === 'station' ? '/station' : '/');
   };
   const here: { role: SessionRole; title: string; sub: string; person?: typeof caregiver }[] = [
     { role: 'caregiver', title: caregiver.name, sub: `Caregiver · ${caregiver.city}`, person: caregiver },
     { role: 'parent', title: parent.name, sub: `Parent · ${parent.city}`, person: parent },
+    ...(refiller ? [{ role: 'refiller' as SessionRole, title: refiller.name, sub: `Refills and looking in · ${refiller.city}`, person: refiller }] : []),
     ...(s.plan.tier === 'phone' ? [{ role: 'station' as SessionRole, title: 'Dose station', sub: 'The old phone next to the pill box' }] : []),
   ];
 

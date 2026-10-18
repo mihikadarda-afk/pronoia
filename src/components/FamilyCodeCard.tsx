@@ -4,12 +4,12 @@ import { deviceService } from '../services/deviceService';
 import { useAppState, useNow, usePeople } from '../services/useApp';
 import { useToast } from './ui';
 
-/** The 6-character family code with copy, QR and WhatsApp share. */
+/** The 6-character family code with copy, QR and the phone's share sheet. */
 export function FamilyCodeCard() {
   const { code } = useAppState();
   const now = useNow(1000);
   const toast = useToast();
-  const { caregiver, parent } = usePeople();
+  const { caregiver } = usePeople();
   const expired = now.getTime() > code.expiresAt;
   const usable = !expired && !code.used && !!code.code;
   const link = `${location.origin}${location.pathname}#/join?code=${code.code}`;
@@ -47,13 +47,21 @@ export function FamilyCodeCard() {
             Copy
           </button>
           <button
-            className="btn btn--whatsapp"
-            onClick={() => {
-              deviceService.sendWhatsApp(parent.id, `${caregiver.name} invited you to Pronoia 💚 Open the app, tap I'm the parent and type ${code.code}. Or open ${link}`);
-              toast('Sent on WhatsApp (mocked)');
+            className="btn"
+            onClick={async () => {
+              const text = `${caregiver.name} invited you to Pronoia 💚 Open the app, tap I have a family code, and type ${code.code}.`;
+              try {
+                if (navigator.share) await navigator.share({ title: 'Pronoia family code', text, url: link });
+                else {
+                  await navigator.clipboard.writeText(`${text} ${link}`);
+                  toast('Invite copied. Paste it in a message.');
+                }
+              } catch {
+                /* the person closed the share sheet */
+              }
             }}
           >
-            Send on WhatsApp
+            Share
           </button>
         </div>
       ) : null}

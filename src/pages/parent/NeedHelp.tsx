@@ -5,7 +5,7 @@ import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { useAppState } from '../../services/useApp';
 
-/** "I need help": one confirm tap, then an urgent WhatsApp to every caregiver and the refiller nearby. */
+/** "I need help": one confirm tap, then an urgent notification to every caregiver and the refiller nearby. */
 export function NeedHelp() {
   const s = useAppState();
   const t = useT();

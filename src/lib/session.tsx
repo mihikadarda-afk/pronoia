@@ -1,13 +1,19 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { Lang } from '../services/types';
 
-export type SessionRole = 'caregiver' | 'parent' | 'station';
+export type SessionRole = 'caregiver' | 'parent' | 'station' | 'refiller';
+export type TextSize = 'normal' | 'large' | 'largest';
+
+/** How much bigger everything gets. */
+export const TEXT_ZOOM: Record<TextSize, number> = { normal: 1, large: 1.15, largest: 1.3 };
 
 interface Session {
   role: SessionRole | null;
   lang: Lang;
   /** True once someone has joined on the parent side. */
   parentLinked: boolean;
+  /** Bigger text for this phone. */
+  textSize: TextSize;
 }
 
 interface SessionApi extends Session {
@@ -15,10 +21,11 @@ interface SessionApi extends Session {
   signOut(): void;
   setLang(lang: Lang): void;
   setParentLinked(v: boolean): void;
+  setTextSize(size: TextSize): void;
 }
 
 const KEY = 'pronoia.session.v1';
-const defaults: Session = { role: null, lang: 'en', parentLinked: true };
+const defaults: Session = { role: null, lang: 'en', parentLinked: true, textSize: 'normal' };
 
 function read(): Session {
   try {
@@ -50,6 +57,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signOut: () => save({ ...s, role: null }),
       setLang: (lang) => save({ ...s, lang }),
       setParentLinked: (parentLinked) => save({ ...s, parentLinked }),
+      setTextSize: (textSize) => save({ ...s, textSize }),
     }),
     [s, save],
   );

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
+import { readImage } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { usePeople } from '../../services/useApp';
@@ -35,8 +36,10 @@ export function CheckIn() {
                 accept="image/*"
                 capture="user"
                 hidden
-                onChange={(e) => {
-                  if (e.target.files?.[0]) {
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    deviceService.sendPhoto(null, await readImage(f, 720));
                     deviceService.sendSmile();
                     setSmile(true);
                   }

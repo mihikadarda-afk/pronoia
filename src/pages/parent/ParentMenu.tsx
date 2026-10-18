@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { LANGS, langName, useT } from '../../lib/i18n';
 import { useSession } from '../../lib/session';
 import { ConfirmButton } from '../../components/ui';
+import { TextSizePicker } from '../../components/TextSize';
 import { deviceService, isLocal } from '../../services/deviceService';
 
 export function ParentMenu() {
@@ -17,6 +18,10 @@ export function ParentMenu() {
             {langName(l)}
           </button>
         ))}
+      </div>
+      <h1 style={{ marginTop: 28 }}>{t.textSize}</h1>
+      <div style={{ marginTop: 14 }}>
+        <TextSizePicker big />
       </div>
       <div className="stack" style={{ marginTop: 28 }}>
         <button className="p-btn p-btn--secondary" onClick={() => nav('/parent/privacy')}>

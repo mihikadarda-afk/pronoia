@@ -12,10 +12,12 @@ import type {
   EventPref,
   Medicine,
   NotificationSettings,
-  NotifyChannel,
   NotifyEvent,
+  OutboxMessage,
   Pause,
   Person,
+  PhotoMoment,
+  PhotoSettings,
   Plan,
   Role,
   SlotHealth,
@@ -41,6 +43,8 @@ export interface AuthState {
   email?: string;
   isAnonymous?: boolean;
   caregiverName?: string;
+  /** Live: the signed-in person's member id (for their inbox). */
+  memberId?: string;
 }
 
 export interface NewCircle {
@@ -49,11 +53,14 @@ export interface NewCircle {
   parent: { name: string; relation: string; whatsapp: string; city: string; timeZone: string; photo?: string };
 }
 
-export type TimelineItem = { kind: 'dose'; at: Date; dose: Dose } | { kind: 'checkin'; at: Date; checkIn: CheckIn };
+export type TimelineItem =
+  | { kind: 'dose'; at: Date; dose: Dose }
+  | { kind: 'checkin'; at: Date; checkIn: CheckIn }
+  | { kind: 'photo'; at: Date; photo: PhotoMoment };
 
 /**
  * The single seam between the UI and everything outside it: the dispenser,
- * the dose station, the AI check and WhatsApp. `MockDeviceService` keeps a
+ * the dose station, the AI check and notifications. `MockDeviceService` keeps a
  * demo family in the browser; `LiveDeviceService` talks to Supabase.
  */
 export interface DeviceService {
@@ -124,8 +131,25 @@ export interface DeviceService {
   remindRefiller(): void;
   logRefill(slots: number[]): void;
 
-  // Messaging
-  sendWhatsApp(toPersonId: string, text: string): void;
+  // Notifications and messages
+  /** A notification in someone's inbox (and on their phone). */
+  notify(toPersonId: string, text: string, opts?: Pick<OutboxMessage, 'kind' | 'ref' | 'wake'>): void;
+  inbox(personId: string): OutboxMessage[];
+  markInboxRead(personId: string): void;
+  /** The refiller looked in on the parent after a missed check-in. */
+  replyOk(checkInId: string, note?: string): void;
+  /** A short note from the family, shown on the parent's phone. */
+  nudgeParent(text: string): void;
+  /** Background notifications: the phone's push subscription (live only). */
+  savePushSubscription(sub: PushSubscriptionJSON): Promise<void>;
+
+  // Photo moments ("smile time")
+  photosForDay(dayOffset: number): PhotoMoment[];
+  currentPhotoRequest(): PhotoMoment | undefined;
+  askForPhoto(): void;
+  sendPhoto(momentId: string | null, photo: string): void;
+  markPhotosSeen(): void;
+  updatePhotoSettings(patch: Partial<PhotoSettings>): void;
   parentMessage(kind: 'ok' | 'call'): void;
   /** Urgent: tells every caregiver and the refiller. Returns who was told. */
   parentHelp(): Promise<string[]>;
@@ -137,7 +161,6 @@ export interface DeviceService {
   updateNotifications(patch: Partial<Omit<NotificationSettings, 'events'>>): void;
   setEventPref(event: NotifyEvent, patch: Partial<EventPref>): void;
   applyNotificationPreset(preset: Preset): void;
-  sendTestNotification(): Promise<NotifyChannel[]>;
   pairDevice(code: string): Promise<{ ok: boolean; reason?: string }>;
   /** The dose station reports in. */
   stationHeartbeat(patch: Partial<StationStatus>): void;
@@ -238,10 +261,48 @@ export abstract class BaseService {
     return this.checkInsForDay(Number(id.split(':')[0])).find((c) => c.id === id);
   }
 
+  photosForDay(dayOffset: number): PhotoMoment[] {
+    const s = this.getState();
+    const now = this.now();
+    const tz = this.parentTz();
+    const times = new Set(s.photoSettings.times);
+    for (const r of s.photos) if (r.dayOffset === dayOffset) times.add(r.time);
+    const out: PhotoMoment[] = [];
+    for (const time of times) {
+      const id = `${dayOffset}:${time}`;
+      const record = s.photos.find((r) => r.id === id);
+      const scheduledAt = instantFor(now, tz, dayOffset, time);
+      const opened = scheduledAt;
+      let status: PhotoMoment['status'];
+      if (record?.photo) status = 'sent';
+      else if (opened > now) {
+        if (dayOffset < 0) continue;
+        status = 'upcoming';
+      } else if (now.getTime() - opened.getTime() < s.photoSettings.windowMin * 60_000) status = 'waiting';
+      else status = 'missed';
+      if (dayOffset < 0 && !record) continue;
+      out.push({ id, dayOffset, time, scheduledAt, status, record });
+    }
+    return out.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+  }
+
+  currentPhotoRequest(): PhotoMoment | undefined {
+    return this.photosForDay(0).find((p) => p.status === 'waiting');
+  }
+
+  inbox(personId: string): OutboxMessage[] {
+    const s = this.getState();
+    const name = s.people.find((p) => p.id === personId)?.name;
+    return s.outbox.filter((m) => (m.toId ? m.toId === personId : m.to === name));
+  }
+
   timeline(dayOffset: number): TimelineItem[] {
     const items: TimelineItem[] = [
       ...this.dosesForDay(dayOffset).map((dose) => ({ kind: 'dose' as const, at: dose.scheduledAt, dose })),
       ...this.checkInsForDay(dayOffset).map((checkIn) => ({ kind: 'checkin' as const, at: checkIn.scheduledAt, checkIn })),
+      ...this.photosForDay(dayOffset)
+        .filter((photo) => photo.status !== 'upcoming' || dayOffset === 0)
+        .map((photo) => ({ kind: 'photo' as const, at: photo.scheduledAt, photo })),
     ];
     return items.sort((a, b) => a.at.getTime() - b.at.getTime());
   }
@@ -295,7 +356,7 @@ export abstract class BaseService {
   }
 }
 
-/** The WhatsApp line for a dose result. */
+/** The notification for a dose result. */
 export function doseAlertText(parent: string, time: string, status: DoseStatus, confidence?: number, takenAt?: string) {
   const when = shortTime(time);
   if (status === 'taken' || status === 'late') {

@@ -123,7 +123,7 @@ export function wallTime(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
 }
 
-/** "1pm", "8:30am": the short form used in WhatsApp messages. */
+/** "1pm", "8:30am": the short form used in notifications. */
 export function shortTime(hhmm: string): string {
   return hhmmLabel(hhmm).replace(':00', '').replace(' ', '').toLowerCase();
 }

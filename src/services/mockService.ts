@@ -10,10 +10,11 @@ import type {
   Medicine,
   Notice,
   NotificationSettings,
-  NotifyChannel,
   NotifyEvent,
+  OutboxMessage,
   Pause,
   Person,
+  PhotoSettings,
   Plan,
   Role,
   StationStatus,
@@ -68,7 +69,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       saved = raw ? (JSON.parse(raw) as Saved) : null;
-      if (saved?.state?.version !== 2) saved = null;
+      if (saved?.state?.version !== 3) saved = null;
     } catch {
       saved = null;
     }
@@ -176,8 +177,11 @@ export class MockDeviceService extends BaseService implements DeviceService {
     let notices = s.notices;
     let changed = false;
     const t = this.t();
-    const send = (to: string, text: string) => {
-      outbox = [{ id: `m${t}-${outbox.length}`, at: t, channel: 'whatsapp' as const, to, text }, ...outbox].slice(0, 60);
+    const send = (toId: string, text: string, opts: Partial<OutboxMessage> = {}) => {
+      outbox = [this.message(toId, text, opts, outbox.length), ...outbox].slice(0, 80);
+    };
+    const toCaregivers = (event: NotifyEvent, text: string, opts: Partial<OutboxMessage> = {}) => {
+      for (const id of this.caregiversFor(event)) send(id, text, { wake: s.notifications.events[event]?.wakeMe, ...opts });
     };
     const note = (kind: Notice['kind'], text: string) => {
       notices = [{ id: `n${t}-${notices.length}`, at: t, kind, text, read: false }, ...notices].slice(0, 60);
@@ -217,10 +221,10 @@ export class MockDeviceService extends BaseService implements DeviceService {
             slot: d.slot,
             time: d.time,
             status: 'missed',
-            events: [...events, { label: `WhatsApp alert sent to ${this.caregiverName()}`, minute: s.alerts.caregiverAlertMin }],
+            events: [...events, { label: `Notified ${this.caregiverName()}`, minute: s.alerts.caregiverAlertMin }],
           },
         ];
-        send(this.caregiverName(), doseAlertText(parent, d.time, 'missed'));
+        toCaregivers('missed', doseAlertText(parent, d.time, 'missed'), { kind: 'dose', ref: d.id });
         note('alert', `${parent} hasn't taken the ${hhmmLabel(d.time)} ${d.medicine.name}.`);
         changed = true;
       }
@@ -262,14 +266,25 @@ export class MockDeviceService extends BaseService implements DeviceService {
         put({ id: c.id, dayOffset: 0, time: c.time, status: 'due', events: [...events, { label: 'Chimed again, louder', minute: settings.repeatMin }] });
       }
       const cur = (): CheckInRecord => checkIns.find((r) => r.id === c.id) ?? { id: c.id, dayOffset: 0, time: c.time, status: 'due', events };
-      if (after >= settings.refillerMin && refiller && !has('WhatsApp to')) {
-        put({ ...cur(), status: 'missed_notified', events: [...cur().events, { label: `WhatsApp to ${refiller.name}`, minute: settings.refillerMin }] });
-        send(refiller.name, `${parent} hasn't checked in since ${hhmmLabel(c.time)}. Can you check on them? Reply OK when you have.`);
+      if (after >= settings.refillerMin && refiller && !has(`Notified ${refiller.name}`)) {
+        put({ ...cur(), status: 'missed_notified', events: [...cur().events, { label: `Notified ${refiller.name}`, minute: settings.refillerMin }] });
+        send(refiller.id, `${parent} hasn't checked in since ${hhmmLabel(c.time)}. Can you check on them? Tap Reply OK when you have.`, {
+          kind: 'checkin',
+          ref: c.id,
+          wake: true,
+        });
       }
-      if (after >= settings.caregiverMin && !has('WhatsApp to ' + this.caregiverName())) {
+      if (after >= settings.caregiverMin && !has('Notified caregivers')) {
         const r = cur();
-        put({ ...r, status: 'missed_notified', events: [...r.events, { label: `WhatsApp to ${this.caregiverName()}`, minute: settings.caregiverMin }] });
-        send(this.caregiverName(), `${parent} hasn't checked in since ${hhmmLabel(c.time)}${refiller ? ` and ${refiller.name} hasn't replied yet` : ''}. Please call.`);
+        put({ ...r, status: 'missed_notified', events: [...r.events, { label: 'Notified caregivers', minute: settings.caregiverMin }] });
+        // This one ignores quiet hours.
+        for (const id of this.caregiversFor('help')) {
+          send(id, `${parent} hasn't checked in since ${hhmmLabel(c.time)}${refiller ? ` and ${refiller.name} hasn't replied yet` : ''}. Please call.`, {
+            kind: 'checkin',
+            ref: c.id,
+            wake: true,
+          });
+        }
         note('checkin', `${parent} missed the ${hhmmLabel(c.time)} check-in.`);
       }
     }
@@ -352,7 +367,6 @@ export class MockDeviceService extends BaseService implements DeviceService {
       frames: { state: 'awaiting', images: frames, sample: result.sample, capturedAt: t, note: result.reason },
     };
     const parent = this.parentName();
-    const caregiver = this.caregiverName();
     // Videos are big for browser storage: keep only the two newest waiting for review.
     let kept = 0;
     const older = [...this.state.records.filter((r) => r.id !== id)]
@@ -361,9 +375,11 @@ export class MockDeviceService extends BaseService implements DeviceService {
     const next: Partial<AppState> = { records: [...older, rec] };
     if (status !== 'due') {
       next.outbox = [
-        { id: `m${t}`, at: t, channel: 'whatsapp' as const, to: caregiver, text: doseAlertText(parent, d.time, status, result.confidence, wallTime(this.now(), this.parentTz())) },
+        ...this.caregiversFor(status === 'unconfirmed' ? 'review' : status === 'late' ? 'late' : 'taken').map((cid, i) =>
+          this.message(cid, doseAlertText(parent, d.time, status, result.confidence, wallTime(this.now(), this.parentTz())), { kind: 'dose', ref: id }, i),
+        ),
         ...this.state.outbox,
-      ].slice(0, 60);
+      ].slice(0, 80);
     }
     if (plan === 'device' && status !== 'due') {
       next.medicines = this.state.medicines.map((m) => (m.slot === d.slot ? { ...m, pillsLeft: Math.max(0, m.pillsLeft - 1) } : m));
@@ -560,10 +576,9 @@ export class MockDeviceService extends BaseService implements DeviceService {
     const device = this.state.plan.tier === 'device';
     const low = this.state.medicines.filter((m) => this.slotHealth(m) !== 'ok');
     const list = low.length ? low.map((m) => (device ? `slot ${m.slot} (${m.name})` : m.name)).join(', ') : 'all medicines';
-    this.sendWhatsApp(
-      refiller.id,
-      `Hi ${refiller.name}, Pebble here 💚 ${this.parentName()}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`,
-    );
+    this.notify(refiller.id, `Hi ${refiller.name}, Pebble here 💚 ${this.parentName()}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`, {
+      kind: 'refill',
+    });
   }
 
   logRefill(slots: number[]) {
@@ -577,18 +592,96 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   // ---- messaging ----
 
-  sendWhatsApp(toPersonId: string, text: string) {
-    const to = this.person(toPersonId);
+  private message(toId: string, text: string, opts: Partial<OutboxMessage> = {}, n = 0): OutboxMessage {
     const t = this.t();
+    return { id: `m${t}-${n}-${Math.random().toString(36).slice(2, 6)}`, at: t, channel: 'push', to: this.person(toId)?.name ?? toId, toId, text, read: false, ...opts };
+  }
+
+  /** Active caregivers who want this kind of notification. Help always reaches everyone. */
+  private caregiversFor(event: NotifyEvent): string[] {
+    const on = event === 'help' || (this.state.notifications.events[event]?.channels.length ?? 0) > 0;
+    return on ? this.state.people.filter((p) => p.role === 'caregiver' && p.status === 'active').map((p) => p.id) : [];
+  }
+
+  private toCaregivers(event: NotifyEvent, text: string, opts: Partial<OutboxMessage> = {}): OutboxMessage[] {
+    const wake = this.state.notifications.events[event]?.wakeMe;
+    return this.caregiversFor(event).map((id, i) => this.message(id, text, { wake, ...opts }, i));
+  }
+
+  notify(toPersonId: string, text: string, opts: Partial<OutboxMessage> = {}) {
+    this.set({ outbox: [this.message(toPersonId, text, opts), ...this.state.outbox].slice(0, 80) });
+  }
+
+  markInboxRead(personId: string) {
+    const mine = new Set(this.inbox(personId).filter((m) => !m.read).map((m) => m.id));
+    if (!mine.size) return;
+    this.set({ outbox: this.state.outbox.map((m) => (mine.has(m.id) ? { ...m, read: true } : m)) });
+  }
+
+  replyOk(checkInId: string, note?: string) {
+    const rec = this.state.checkIns.find((r) => r.id === checkInId);
+    const refiller = this.refiller();
+    if (!rec || !refiller || (rec.status !== 'missed_notified' && rec.status !== 'due')) return;
+    const minute = this.minutesSince(rec.dayOffset, rec.time);
+    const text = note?.trim();
     this.set({
-      outbox: [{ id: `m${t}`, at: t, channel: 'whatsapp' as const, to: to?.name ?? toPersonId, text }, ...this.state.outbox].slice(0, 60),
+      checkIns: this.state.checkIns.map((r) =>
+        r.id === checkInId
+          ? { ...r, status: 'refiller_ok', note: text || undefined, events: [...r.events, { label: `${refiller.name} replied OK${text ? `: ${text}` : ''}`, minute }] }
+          : r,
+      ),
+      outbox: [...this.toCaregivers('checkin', `${refiller.name} checked on ${this.parentName()}: okay${text ? `. ${text}` : '.'}`, { kind: 'checkin', ref: checkInId }), ...this.state.outbox].slice(0, 80),
+      notices: this.notice('checkin', `${refiller.name} checked on ${this.parentName()}: okay.`),
     });
+  }
+
+  nudgeParent(text: string) {
+    const t = this.t();
+    this.set({ familyNotes: [{ id: `f${t}`, at: t, from: this.caregiverName(), kind: 'note' as const, text, seen: false }, ...this.state.familyNotes].slice(0, 20) });
+  }
+
+  async savePushSubscription() {
+    // Background push needs the live backend; on this phone, notifications show while the app is open.
+  }
+
+  // ---- photo moments ----
+
+  askForPhoto() {
+    const time = wallTime(this.now(), this.parentTz());
+    const id = `0:${time}`;
+    if (this.state.photos.some((p) => p.id === id)) return;
+    this.set({ photos: [...this.state.photos, { id, dayOffset: 0, time, askedBy: this.caregiverName() }] });
+  }
+
+  sendPhoto(momentId: string | null, photo: string) {
+    const t = this.t();
+    const id = momentId ?? `0:${wallTime(this.now(), this.parentTz())}`;
+    const [day, ...rest] = id.split(':');
+    const prev = this.state.photos.find((p) => p.id === id);
+    const rec = { ...(prev ?? { id, dayOffset: Number(day), time: rest.join(':') }), photo, sentAt: t, seen: false };
+    // Photos are big for browser storage: keep the last 12.
+    const photos = [...this.state.photos.filter((p) => p.id !== id), rec]
+      .sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))
+      .map((p, i) => (i >= 12 && p.photo ? { ...p, photo: undefined } : p));
+    this.set({
+      photos,
+      outbox: [...this.toCaregivers('photo', `📷 ${this.parentName()} sent a photo.`, { kind: 'photo', ref: id }), ...this.state.outbox].slice(0, 80),
+    });
+  }
+
+  markPhotosSeen() {
+    if (this.state.photos.every((p) => !p.photo || p.seen)) return;
+    this.set({ photos: this.state.photos.map((p) => (p.photo ? { ...p, seen: true } : p)) });
+  }
+
+  updatePhotoSettings(patch: Partial<PhotoSettings>) {
+    this.set({ photoSettings: { ...this.state.photoSettings, ...patch } });
   }
 
   parentMessage(kind: 'ok' | 'call') {
     const name = this.parentName();
     const text = kind === 'ok' ? `${name} says: I'm okay 💚` : `${name} says: Please call me 📞`;
-    this.sendWhatsApp(this.state.caregiverId, text);
+    this.set({ outbox: [...this.toCaregivers('parentMessage', text, { kind: 'message' }), ...this.state.outbox].slice(0, 80) });
     this.set({ notices: this.notice('message', text) });
     if (kind === 'ok') this.checkInNow();
   }
@@ -598,7 +691,8 @@ export class MockDeviceService extends BaseService implements DeviceService {
     const helpers = this.state.people.filter((p) => p.status === 'active' && (p.role === 'caregiver' || p.role === 'refiller'));
     const t = this.t();
     const time = wallTime(this.now(), this.parentTz());
-    for (const p of helpers) this.sendWhatsApp(p.id, `🆘 ${name} pressed I need help at ${hhmmLabel(time)}. Call ${this.person(this.state.parentId)?.whatsapp ?? ''}.`);
+    const helpText = `🆘 ${name} pressed I need help at ${hhmmLabel(time)}. Call ${this.person(this.state.parentId)?.whatsapp ?? ''}.`;
+    this.set({ outbox: [...helpers.map((p, i) => this.message(p.id, helpText, { kind: 'help', wake: true }, i)), ...this.state.outbox].slice(0, 80) });
     const due = this.currentCheckIn();
     const id = `0:${due?.time ?? time}`;
     const prev = this.state.checkIns.find((r) => r.id === id);
@@ -638,19 +732,6 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   applyNotificationPreset(preset: Preset) {
     this.set({ notifications: { ...this.state.notifications, events: presetEvents(preset) } });
-  }
-
-  async sendTestNotification(): Promise<NotifyChannel[]> {
-    const n = this.state.notifications;
-    const on = (Object.keys(n.channels) as NotifyChannel[]).filter((c) => n.channels[c]);
-    const t = this.t();
-    this.set({
-      outbox: [
-        ...on.map((channel, i) => ({ id: `m${t}-${i}`, at: t, channel, to: this.caregiverName(), text: 'Pebble here 💚 This is a test notification from Pronoia.' })),
-        ...this.state.outbox,
-      ].slice(0, 60),
-    });
-    return on;
   }
 
   async pairDevice(input: string) {

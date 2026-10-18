@@ -1,5 +1,5 @@
 // Shared domain types. The UI only talks to these shapes, so the demo service
-// can be swapped for the live one (Supabase, the ESP32 dispenser, the dose station).
+// can be swapped for the live one (Supabase, the Raspberry Pi dispenser, the dose station).
 
 export type Role = 'caregiver' | 'parent' | 'refiller' | 'station';
 export type Lang = 'en' | 'hi' | 'gu';
@@ -36,6 +36,7 @@ export interface Person {
   name: string;
   role: Role;
   relation: string; // "Granddaughter", "Grandfather", "Cousin"
+  /** Phone number, for "Call Nanaji". (The field name is from when alerts went by WhatsApp.) */
   whatsapp: string;
   city: string;
   timeZone: string;
@@ -137,8 +138,8 @@ export interface CheckInSettings {
   sleepStart: string; // parent-local
   sleepEnd: string;
   repeatMin: number; // chime again, louder
-  refillerMin: number; // WhatsApp the refiller
-  caregiverMin: number; // WhatsApp the caregiver if the refiller hasn't replied
+  refillerMin: number; // notify the refiller
+  caregiverMin: number; // notify the caregivers if the refiller hasn't replied
 }
 
 export interface Pause {
@@ -151,8 +152,9 @@ export interface FamilyNote {
   id: string;
   at: number;
   from: string;
-  kind: 'heart' | 'voice';
+  kind: 'heart' | 'voice' | 'note';
   seconds?: number;
+  text?: string;
   seen: boolean;
 }
 
@@ -166,7 +168,7 @@ export interface RefillLogEntry {
 
 export interface AlertSettings {
   parentReminderMin: number; // the parent's phone (or dispenser) reminds after N minutes
-  caregiverAlertMin: number; // WhatsApp to the caregiver after N minutes
+  caregiverAlertMin: number; // notify the caregiver after N minutes
   quietStart: string; // caregiver-local HH:MM
   quietEnd: string;
   reviewBelow: number; // ask the caregiver to review below this confidence (0..100)
@@ -175,7 +177,8 @@ export interface AlertSettings {
   refillReminders: boolean;
 }
 
-export type NotifyChannel = 'whatsapp' | 'push' | 'email' | 'sms' | 'call';
+/** Notifications are in the app: an inbox, and the phone's own notifications. */
+export type NotifyChannel = 'push';
 
 export type NotifyEvent =
   | 'help'
@@ -189,6 +192,7 @@ export type NotifyEvent =
   | 'slotProblem'
   | 'offline'
   | 'joinRequest'
+  | 'photo'
   | 'dailyDigest'
   | 'weeklySummary';
 
@@ -200,8 +204,6 @@ export interface EventPref {
 
 export interface NotificationSettings {
   channels: Record<NotifyChannel, boolean>;
-  email: string;
-  phone: string;
   digestTime: string;
   events: Record<NotifyEvent, EventPref>;
 }
@@ -239,12 +241,48 @@ export interface Notice {
   read: boolean;
 }
 
+/** A notification in someone's inbox (and on their phone, when they've allowed it). */
 export interface OutboxMessage {
   id: string;
   at: number;
   channel: NotifyChannel;
-  to: string;
+  to: string; // name
+  toId?: string; // person id
   text: string;
+  read?: boolean;
+  /** Breaks through quiet hours. */
+  wake?: boolean;
+  /** What it's about, for an action: a check-in id ("Reply OK"), a dose id, a photo id. */
+  ref?: string;
+  kind?: 'dose' | 'checkin' | 'help' | 'photo' | 'refill' | 'message' | 'system';
+}
+
+/** "Smile time": a few times a day the family asks for a photo, BeReal style. */
+export interface PhotoRecord {
+  id: string; // `${dayOffset}:${time}`
+  dayOffset: number;
+  time: string; // parent-local "HH:MM" it was asked for
+  askedBy?: string; // a caregiver's name, when asked on the spot
+  photo?: string; // small JPEG data URL
+  sentAt?: number;
+  seen?: boolean;
+}
+
+export type PhotoStatus = 'sent' | 'waiting' | 'missed' | 'upcoming';
+
+export interface PhotoMoment {
+  id: string;
+  dayOffset: number;
+  time: string;
+  scheduledAt: Date;
+  status: PhotoStatus;
+  record?: PhotoRecord;
+}
+
+export interface PhotoSettings {
+  times: string[]; // parent-local, 2 or 3 a day
+  /** How long the parent has to answer. */
+  windowMin: number;
 }
 
 export interface AppState {
@@ -260,6 +298,8 @@ export interface AppState {
   checkInSettings: CheckInSettings;
   pause: Pause | null;
   familyNotes: FamilyNote[];
+  photos: PhotoRecord[];
+  photoSettings: PhotoSettings;
   refillLog: RefillLogEntry[];
   alerts: AlertSettings;
   notifications: NotificationSettings;

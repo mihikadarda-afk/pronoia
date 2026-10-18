@@ -6,7 +6,7 @@ import { checkInStatus, checkInSub, checkInTitle, doseStatus, doseSub, doseTitle
 import { cityShort, fmtDate, fmtTime, hhmmLabel, relTime } from '../../lib/time';
 import { deviceService, isDoneDose, type TimelineItem } from '../../services/deviceService';
 import { hasPlan } from '../../services/plans';
-import { useAppState, useNow, usePeople } from '../../services/useApp';
+import { useAppState, useMyId, useNow, usePeople } from '../../services/useApp';
 import type { AppState, Person } from '../../services/types';
 import { CheckInSheet, DoseSheet } from './sheets';
 
@@ -62,7 +62,12 @@ export function Today() {
   const attention = (i: TimelineItem) =>
     i.kind === 'dose'
       ? i.dose.status === 'unconfirmed' && i.dose.record?.frames?.state === 'awaiting'
-      : i.checkIn.status === 'missed_notified' || i.checkIn.status === 'help';
+      : i.kind === 'checkin'
+        ? i.checkIn.status === 'missed_notified' || i.checkIn.status === 'help'
+        : false;
+  const me = useMyId('caregiver');
+  const unread = me ? deviceService.inbox(me).filter((m) => !m.read).length : 0;
+  const waitingPhoto = deviceService.currentPhotoRequest();
 
   return (
     <main className="screen">
@@ -74,13 +79,21 @@ export function Today() {
             {parent.city || cityShort(parent.timeZone)} {fmtTime(now, parent.timeZone)} · {cityShort(caregiver.timeZone)} {fmtTime(now, caregiver.timeZone)}
           </div>
         </div>
-        <PlanBadge plan={plan} />
+        <span className="row" style={{ gap: 4 }}>
+          <Link to="/care/inbox" className="bell" aria-label={unread ? `Notifications, ${unread} new` : 'Notifications'}>
+            <svg viewBox="0 0 24 24" width={22} height={22} aria-hidden>
+              <path d="M6 10 a6 6 0 0 1 12 0 v4 l1.5 3 H4.5 L6 14 Z M10 20 h4" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+            </svg>
+            {unread > 0 && <span className="bell-count num">{unread > 9 ? '9+' : unread}</span>}
+          </Link>
+          <PlanBadge plan={plan} />
+        </span>
       </header>
 
       {helpNotices.map((n) => (
         <section key={n.id} className="alert-banner" role="alert" style={{ marginBottom: 12 }}>
           <strong>{n.text}</strong>
-          {parent.whatsapp && <span className="block small">Call {parent.name}: <span className="num">{parent.whatsapp}</span>{refiller ? `. ${refiller.name} was told too.` : ''}</span>}
+          {parent.whatsapp && <span className="block small">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a>{refiller ? `. ${refiller.name} was told too.` : ''}</span>}
           <button className="btn btn--small" style={{ marginTop: 10 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
             I’m on it
           </button>
@@ -97,6 +110,19 @@ export function Today() {
           </span>
           <span className="sep">·</span>
           <span>{last ? <>Last checked in <b>{fmtTime(last, parent.timeZone)}</b></> : 'No check-in yet today'}</span>
+        </div>
+        <div className="row" style={{ marginTop: 10, gap: 14 }}>
+          <button
+            className="link-btn small"
+            style={{ padding: 0 }}
+            disabled={!!waitingPhoto}
+            onClick={() => {
+              deviceService.askForPhoto();
+              toast(`Asked ${parent.name} for a photo`);
+            }}
+          >
+            {waitingPhoto ? 'Photo asked for' : 'Ask for a photo'}
+          </button>
         </div>
         <div className="updated">
           <span>Updated {relTime(s.updatedAt, now.getTime())}</span>
@@ -150,6 +176,43 @@ export function Today() {
                       {d.record?.confidence !== undefined && plan !== 'free' && <span className="conf">{d.record.confidence}%</span>}
                     </span>
                   </button>
+                </li>
+              );
+            }
+            if (i.kind === 'photo') {
+              const ph = i.photo;
+              return (
+                <li key={`p-${ph.id}`}>
+                  <Link to="/care/photos" className="lrow">
+                    <TimeCol date={ph.scheduledAt} parentTz={parent.timeZone} caregiverTz={caregiver.timeZone} />
+                    {ph.record?.photo ? (
+                      <img src={ph.record.photo} alt={`Photo from ${parent.name}`} className="pill-thumb" />
+                    ) : (
+                      <span className="photo-ph" aria-hidden>
+                        <svg viewBox="0 0 24 24" width={20} height={20}>
+                          <path d="M4 8 h3 l2 -2 h6 l2 2 h3 v11 H4 Z" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+                          <circle cx={12} cy={13} r={3.5} fill="none" stroke="currentColor" strokeWidth={1.5} />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="grow">
+                      <span className="lrow-title block">
+                        {ph.status === 'sent'
+                          ? `${parent.name} sent a photo at ${fmtTime(new Date(ph.record!.sentAt!), parent.timeZone)}`
+                          : ph.status === 'waiting'
+                            ? `Smile time: waiting for ${parent.name}`
+                            : ph.status === 'missed'
+                              ? 'No photo this time'
+                              : 'Smile time'}
+                      </span>
+                      <span className="lrow-sub block">{ph.record?.askedBy ? `${ph.record.askedBy} asked` : 'A photo of the day'}</span>
+                    </span>
+                    <span className="lrow-end">
+                      <Status tone={ph.status === 'sent' ? 'good' : ph.status === 'waiting' ? 'due' : 'quiet'}>
+                        {ph.status === 'sent' ? (ph.record?.seen ? 'Sent' : 'New') : ph.status === 'waiting' ? 'Waiting' : ph.status === 'missed' ? 'Missed' : 'Upcoming'}
+                      </Status>
+                    </span>
+                  </Link>
                 </li>
               );
             }

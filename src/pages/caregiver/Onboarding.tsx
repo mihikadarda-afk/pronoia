@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { CreateCircle } from './CreateCircle';
 import { PlanPicker } from './Plans';
+import { PhoneNotifications } from './Notifications';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { Pebble, type PebbleMood } from '../../components/Pebble';
 import { Avatar, PillPhoto, Says, readImage } from '../../components/ui';
@@ -12,7 +13,7 @@ import { useAppState, useAuth, usePeople } from '../../services/useApp';
 import type { Billing, Plan } from '../../services/types';
 
 const ZONES = ['Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Asia/Dubai', 'Australia/Sydney'];
-const ALL = ['welcome', 'plan', 'parent', 'zones', 'medicines', 'checkins', 'whatsapp', 'code', 'station', 'device', 'done'] as const;
+const ALL = ['welcome', 'plan', 'parent', 'zones', 'medicines', 'checkins', 'phones', 'code', 'station', 'device', 'done'] as const;
 type Step = (typeof ALL)[number];
 
 export function Onboarding() {
@@ -46,7 +47,7 @@ export function Onboarding() {
     plan: ['happy', 'First, how should I know the pill was taken? You can change this any time.'],
     medicines: ['waving', `Add each medicine with a photo of the real pill. ${parent.name || 'Your parent'} will see that photo at dose time.`],
     checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.${plan === 'free' ? '' : ' If a check-in is missed, I ask the refiller first, then you.'}`],
-    whatsapp: ['happy', 'Alerts come on WhatsApp. Whose numbers should I use?'],
+    phones: ['happy', 'Alerts come as notifications in the app. Turn them on for this phone, and add numbers so you can call each other.'],
     code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I’m the parent and type this code.`],
     station: ['thinking', `Now the old phone. It films a 12-second video at each dose, and nothing at any other time.`],
     device: ['thinking', 'Now the dispenser. Its code is printed on the bottom. It films each dose with its own camera and uploads the video.'],
@@ -86,8 +87,8 @@ export function Onboarding() {
               : plan === 'free'
                 ? `${parent.name || 'Your parent'}’s phone will show the right pill at each dose, and I’ll show you every I took it tap.`
                 : plan === 'phone'
-                  ? `The old phone will film each dose and I’ll tell you on WhatsApp when the pill is taken, with how sure I am.`
-                  : `The dispenser will give out the right pill, film each dose and upload it, and I’ll tell you on WhatsApp when it’s taken.`}
+                  ? `The old phone will film each dose and I’ll notify you when the pill is taken, with how sure I am.`
+                  : `The dispenser will give out the right pill, film each dose and upload it, and I’ll notify you when it’s taken.`}
           </p>
         </div>
       ) : (
@@ -181,14 +182,17 @@ export function Onboarding() {
           </ul>
         )}
 
-        {step === 'whatsapp' && (
+        {step === 'phones' && (
           <>
+            <div style={{ marginBottom: 16 }}>
+              <PhoneNotifications />
+            </div>
             <label className="field">
-              <span>Your WhatsApp</span>
+              <span>Your phone number</span>
               <input className="input" type="tel" value={caregiver.whatsapp} onChange={(e) => deviceService.updatePerson(caregiver.id, { whatsapp: e.target.value })} />
             </label>
             <label className="field">
-              <span>{parent.name}’s WhatsApp</span>
+              <span>{parent.name}’s phone number</span>
               <input className="input" type="tel" value={parent.whatsapp} onChange={(e) => deviceService.updatePerson(parent.id, { whatsapp: e.target.value })} />
             </label>
             {refiller ? (

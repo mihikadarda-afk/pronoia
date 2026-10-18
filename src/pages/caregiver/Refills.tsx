@@ -50,14 +50,14 @@ export function Refills() {
           {refiller ? (
             <>
               <button
-                className="btn btn--whatsapp btn--block"
+                className="btn btn--block"
                 style={{ marginTop: 12 }}
                 onClick={() => {
                   deviceService.remindRefiller();
-                  toast(`Reminder sent to ${refiller.name} (WhatsApp is mocked)`);
+                  toast(`Reminder sent to ${refiller.name}`);
                 }}
               >
-                Remind {refiller.name} on WhatsApp
+                Remind {refiller.name}
               </button>
               {lastReminder && <p className="tiny muted center" style={{ margin: '8px 0 0' }}>Last reminder {relTime(lastReminder.at, now.getTime())}</p>}
             </>

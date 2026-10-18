@@ -345,7 +345,7 @@ begin
     if m.role = 'refiller' or not exists (
       select 1 from outbox where to_member = m.id and text = msg and at > now() - interval '1 minute'
     ) then
-      perform queue_message(me.circle_id, m.id, 'whatsapp', msg, true);
+      perform queue_notice(me.circle_id, m.id, msg, true, 'help', null);
     end if;
     told := told || m.name;
   end loop;
@@ -393,7 +393,7 @@ begin
   where id = p_record;
 end $$;
 
--- For the WhatsApp webhook (service role): the refiller replied OK to a missed check-in.
+-- For the service role (scripts, support): the refiller replied OK to a missed check-in.
 create function public.refiller_replied_ok(p_check_in uuid, p_note text default null) returns void
 language plpgsql security definer set search_path = public as $$
 declare
@@ -454,9 +454,9 @@ begin
         end if;
         insert into dose_records (circle_id, slot, scheduled_date, time, status, events)
         values (c.id, med.slot, today, t, 'missed', jsonb_build_array(
-          jsonb_build_object('label', 'WhatsApp alert sent', 'minute', alert_after)))
+          jsonb_build_object('label', 'Notified caregivers', 'minute', alert_after)))
         on conflict (circle_id, slot, scheduled_date, time) do update set status = 'missed', updated_at = now(),
-          events = dose_records.events || jsonb_build_array(jsonb_build_object('label', 'WhatsApp alert sent', 'minute', alert_after));
+          events = dose_records.events || jsonb_build_array(jsonb_build_object('label', 'Notified caregivers', 'minute', alert_after));
         n := n + 1;
         insert into notices (circle_id, kind, text) values (c.id, 'alert', parent_name || ' hasn''t taken the ' || t || ' ' || med.name || '.');
         perform notify_caregivers(c.id, 'missed', '❌ ' || parent_name || ' hasn''t taken the ' || short_time(t) || ' pill. It''s ' || alert_after || ' minutes late.');
@@ -528,20 +528,20 @@ begin
       end if;
       if refiller.id is not null and mins >= (s ->> 'refillerMin')::int and ci.status = 'due' then
         update check_ins set status = 'missed_notified', updated_at = now(),
-          events = events || jsonb_build_array(jsonb_build_object('label', 'WhatsApp to ' || refiller.name, 'minute', (s ->> 'refillerMin')::int))
+          events = events || jsonb_build_array(jsonb_build_object('label', 'Notified ' || refiller.name, 'minute', (s ->> 'refillerMin')::int))
         where id = ci.id returning * into ci;
-        perform queue_message(c.id, refiller.id, 'whatsapp', parent_name || ' hasn''t checked in since ' ||
-          to_char(t::time, 'FMHH12:MI AM') || '. Can you check on them? Reply OK when you have.', true);
+        perform queue_notice(c.id, refiller.id, parent_name || ' hasn''t checked in since ' ||
+          to_char(t::time, 'FMHH12:MI AM') || '. Can you check on them? Tap Reply OK when you have.', true, 'checkin', ci.id::text);
         n := n + 1;
       end if;
-      if mins >= (s ->> 'caregiverMin')::int and not ci.events @> '[{"label": "WhatsApp to caregivers"}]' then
+      if mins >= (s ->> 'caregiverMin')::int and not ci.events @> '[{"label": "Notified caregivers"}]' then
         update check_ins set status = 'missed_notified', updated_at = now(),
-          events = events || jsonb_build_array(jsonb_build_object('label', 'WhatsApp to caregivers', 'minute', (s ->> 'caregiverMin')::int))
+          events = events || jsonb_build_array(jsonb_build_object('label', 'Notified caregivers', 'minute', (s ->> 'caregiverMin')::int))
         where id = ci.id;
         insert into notices (circle_id, kind, text) values (c.id, 'checkin', parent_name || ' missed the ' || to_char(t::time, 'FMHH12:MI AM') || ' check-in.');
         -- This one ignores quiet hours.
-        perform queue_message(c.id, m.id, 'whatsapp', parent_name || ' hasn''t checked in since ' || to_char(t::time, 'FMHH12:MI AM') ||
-          coalesce(' and ' || refiller.name || ' hasn''t replied yet', '') || '. Please call.', true)
+        perform queue_notice(c.id, m.id, parent_name || ' hasn''t checked in since ' || to_char(t::time, 'FMHH12:MI AM') ||
+          coalesce(' and ' || refiller.name || ' hasn''t replied yet', '') || '. Please call.', true, 'checkin', ci.id::text)
         from members m where m.circle_id = c.id and m.role = 'caregiver' and m.status = 'active';
         n := n + 1;
       end if;
@@ -626,24 +626,25 @@ begin
   return mid;
 end $$;
 
--- New circles: the Phone plan's promise is a WhatsApp for every dose, with its confidence.
+-- New circles: every alert is an in-app notification (inbox + the phone's notifications).
 alter table public.circles alter column notifications set default '{
-  "channels": {"whatsapp": true, "push": true, "email": true, "sms": false, "call": true},
-  "email": "", "phone": "", "digestTime": "08:00",
+  "channels": {"push": true},
+  "digestTime": "08:00",
   "events": {
-    "help": {"channels": ["whatsapp", "push", "call"], "wakeMe": true},
-    "missed": {"channels": ["whatsapp", "push"], "wakeMe": true},
-    "checkin": {"channels": ["whatsapp", "push"], "wakeMe": true},
-    "review": {"channels": ["whatsapp", "push"], "wakeMe": false},
-    "late": {"channels": ["whatsapp"], "wakeMe": false},
-    "taken": {"channels": ["whatsapp"], "wakeMe": false},
-    "refill": {"channels": ["whatsapp"], "wakeMe": false},
-    "slotProblem": {"channels": ["whatsapp", "push"], "wakeMe": false},
+    "help": {"channels": ["push"], "wakeMe": true},
+    "missed": {"channels": ["push"], "wakeMe": true},
+    "checkin": {"channels": ["push"], "wakeMe": true},
+    "review": {"channels": ["push"], "wakeMe": false},
+    "late": {"channels": ["push"], "wakeMe": false},
+    "taken": {"channels": ["push"], "wakeMe": false},
+    "refill": {"channels": ["push"], "wakeMe": false},
+    "slotProblem": {"channels": ["push"], "wakeMe": false},
     "offline": {"channels": ["push"], "wakeMe": false},
-    "parentMessage": {"channels": ["whatsapp", "push"], "wakeMe": false},
-    "joinRequest": {"channels": ["push", "email"], "wakeMe": false},
-    "dailyDigest": {"channels": ["whatsapp"], "wakeMe": false},
-    "weeklySummary": {"channels": ["whatsapp"], "wakeMe": false}
+    "photo": {"channels": ["push"], "wakeMe": false},
+    "parentMessage": {"channels": ["push"], "wakeMe": false},
+    "joinRequest": {"channels": ["push"], "wakeMe": false},
+    "dailyDigest": {"channels": [], "wakeMe": false},
+    "weeklySummary": {"channels": ["push"], "wakeMe": false}
   }
 }'::jsonb;
 

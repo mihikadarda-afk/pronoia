@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
+import { TextSizePicker } from '../../components/TextSize';
 import { AppBar, Avatar, ConfirmButton, LinkRow, PlanBadge, SectionHead, Status } from '../../components/ui';
 import { useSession } from '../../lib/session';
 import { deviceService, isLocal } from '../../services/deviceService';
 import { planInfo } from '../../services/plans';
-import { useAppState, useAuth, usePeople } from '../../services/useApp';
+import { useAppState, useAuth, useMyId, usePeople } from '../../services/useApp';
 
 export function Settings() {
   const s = useAppState();
@@ -12,7 +13,8 @@ export function Settings() {
   const session = useSession();
   const { caregiver, parent } = usePeople();
   const plan = s.plan.tier;
-  const unread = s.notices.filter((n) => !n.read).length;
+  const me = useMyId('caregiver');
+  const unread = me ? deviceService.inbox(me).filter((m) => !m.read).length : 0;
   const station =
     plan === 'phone'
       ? { title: 'Dose station', ok: s.station.linked && s.station.online, text: !s.station.linked ? 'Not set up' : s.station.online ? `Online · battery ${s.station.battery}%` : 'Offline' }
@@ -36,15 +38,19 @@ export function Settings() {
       <ul className="list">
         <LinkRow to="/care/plans" title="Plan" sub={planInfo(plan).short} end={<span className="small muted">{planInfo(plan).name}</span>} />
         <LinkRow to="/care/alerts" title="Alerts and check-ins" sub="Delays, quiet hours, check-in times, who’s alerted" />
-        <LinkRow to="/care/notifications" title="Notifications" sub="WhatsApp, app, email, SMS, calls" />
+        <LinkRow to="/care/notifications" title="Notifications" sub="Phone notifications, and what you hear about" />
+        <LinkRow to="/care/photos" title="Smile time" sub="Photo moments from your parent" />
         {station && <LinkRow to="/care/station" title={station.title} end={<Status tone={station.ok ? 'good' : 'bad'}>{station.text}</Status>} />}
         <LinkRow to="/care/refills" title="Refills" />
         <LinkRow to="/care/week" title="This week" sub="The Sunday summary" />
       </ul>
 
+      <SectionHead title="Text size" />
+      <TextSizePicker />
+
       <SectionHead title="About" />
       <ul className="list">
-        <LinkRow to="/care/messages" title="Messages" sub="Updates, and what was sent on WhatsApp" end={unread ? <span className="small muted">{unread} new</span> : undefined} />
+        <LinkRow to="/care/inbox" title="Inbox" sub="Every notification sent to you" end={unread ? <span className="small muted">{unread} new</span> : undefined} />
         <LinkRow to="/care/privacy" title="Privacy" sub="What the camera does, and doesn’t" />
       </ul>
 

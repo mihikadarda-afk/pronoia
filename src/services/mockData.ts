@@ -129,7 +129,7 @@ export function seedHistory(now: Date, plan: Plan, meds: Medicine[], settings: C
                 : [
                     { label: plan === 'device' ? 'Dispensed into the cup' : 'Reminder on the dose station', minute: 0 },
                     { label: 'Reminded again', minute: 10 },
-                    { label: 'WhatsApp alert sent to Mihika', minute: 30 },
+                    { label: 'Notified Mihika', minute: 30 },
                     { label: 'Not taken, marked missed', minute: 90 },
                   ],
           });
@@ -150,7 +150,7 @@ export function seedHistory(now: Date, plan: Plan, meds: Medicine[], settings: C
               { label: plan === 'device' ? 'Dispensed into the cup' : 'Reminder on the dose station', minute: 0 },
               { label: 'Picked up', minute: 6 },
               { label: 'AI check: not sure it was swallowed (45%)', minute: 6 },
-              { label: 'WhatsApp sent to Mihika to review', minute: 7 },
+              { label: 'Asked Mihika to review', minute: 7 },
               { label: 'Frames deleted, not reviewed', minute: 6 + 4 * 60 },
             ],
           });
@@ -182,7 +182,7 @@ export function seedHistory(now: Date, plan: Plan, meds: Medicine[], settings: C
                 events: [
                   { label: 'Pebble said hi', minute: 0 },
                   { label: 'Chimed again, louder', minute: 10 },
-                  { label: 'WhatsApp to Ravi', minute: 25 },
+                  { label: 'Notified Ravi', minute: 25 },
                   { label: 'Ravi replied OK: He was at the temple', minute: 55 },
                 ],
               },
@@ -231,9 +231,7 @@ export function seedHistory(now: Date, plan: Plan, meds: Medicine[], settings: C
 
 export function defaultNotifications(): NotificationSettings {
   return {
-    channels: { whatsapp: true, push: true, email: true, sms: false, call: true },
-    email: 'mihika@example.com',
-    phone: '+1 212 555 0148',
+    channels: { push: true },
     digestTime: '08:00',
     events: presetEvents('calm'),
   };
@@ -245,7 +243,7 @@ export function seedState(now: Date, plan: Plan = 'phone'): AppState {
   const checkInSettings = defaultCheckInSettings();
   const { records, checkIns } = seedHistory(now, plan, medicines, checkInSettings);
   return {
-    version: 2,
+    version: 3,
     circleName: "Nanaji's circle",
     caregiverId: 'p-mihika',
     parentId: 'p-nanaji',
@@ -308,6 +306,8 @@ export function seedState(now: Date, plan: Plan = 'phone'): AppState {
     checkInSettings,
     pause: null,
     familyNotes: [{ id: 'f1', at: t - 20 * HOUR, from: 'Mihika', kind: 'heart', seen: true }],
+    photos: [],
+    photoSettings: { times: ['11:00', '18:00'], windowMin: 120 },
     refillLog: [
       { id: 'r1', at: t - 19 * DAY, by: 'Ravi', slots: [1, 2, 3] },
       { id: 'r2', at: t - 54 * DAY, by: 'Ravi', slots: [1, 2, 3], note: 'First fill after setup' },

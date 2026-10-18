@@ -36,7 +36,7 @@ export const PLANS: PlanInfo[] = [
       'Everything in Free',
       'An old phone by the pill box becomes a dose station',
       'It films a 12-second video at each dose, and AI checks the pill was taken',
-      'WhatsApp alerts with the time and a confidence score',
+      'Phone notifications with the time and a confidence score',
       'Missed check-ins alert the refiller, then you',
     ],
   },

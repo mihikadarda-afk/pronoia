@@ -1,104 +1,100 @@
-import { AppBar, Placeholder, Says, SectionHead, Toggle, useToast } from '../../components/ui';
+import { useState } from 'react';
+import { AppBar, Says, SectionHead, Toggle, useToast } from '../../components/ui';
+import { enablePhoneNotifications, hasBackgroundPush, notifyPermission, showPhoneNotification } from '../../lib/push';
 import { cityShort, hhmmLabel } from '../../lib/time';
-import { deviceService } from '../../services/deviceService';
-import { CHANNELS, EVENTS, PRESETS, matchingPreset, type EventInfo } from '../../services/notifications';
-import { useAppState, usePeople } from '../../services/useApp';
-import type { NotifyChannel } from '../../services/types';
+import { deviceService, isLocal } from '../../services/deviceService';
+import { EVENTS, PRESETS, matchingPreset, type EventInfo } from '../../services/notifications';
+import { useAppState, useMyId, usePeople } from '../../services/useApp';
 
-const listOf = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] ?? '');
+const listOf = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : (xs[0] ?? ''));
 
-const GROUPS: EventInfo['group'][] = ['Urgent', 'Doses', 'Pills and dispenser', 'Family', 'Summaries'];
+const GROUPS: EventInfo['group'][] = ['Urgent', 'Doses', 'Pills and station', 'Family', 'Summaries'];
+
+/** On the phone: allowed or not. In the app: every kind on or off, and which may wake you. */
+export function PhoneNotifications() {
+  const toast = useToast();
+  const [perm, setPerm] = useState(notifyPermission());
+  const [busy, setBusy] = useState(false);
+  const background = hasBackgroundPush();
+  const text =
+    perm === 'granted'
+      ? background
+        ? 'On. Alerts reach this phone even when Pronoia is closed.'
+        : isLocal
+          ? 'On while Pronoia is open or in the background.'
+          : 'On while Pronoia is open. Tap again to get them when it’s closed too.'
+      : perm === 'denied'
+        ? 'Blocked. Allow notifications for this site in your phone’s settings.'
+        : perm === 'unsupported'
+          ? 'This browser can’t show notifications. On iPhone, add Pronoia to the Home Screen first.'
+          : 'Off. Everything still arrives in your inbox here.';
+  return (
+    <div className="card">
+      <div className="row-between">
+        <span className="grow">
+          <span className="lrow-title block">Phone notifications</span>
+          <span className="lrow-sub block">{text}</span>
+        </span>
+        {perm !== 'denied' && perm !== 'unsupported' && !(perm === 'granted' && (background || isLocal)) && (
+          <button
+            className="btn btn--small"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              const r = await enablePhoneNotifications();
+              setBusy(false);
+              setPerm(notifyPermission());
+              if (r.reason) toast(r.reason);
+              else if (r.ok) toast(r.background ? 'Notifications are on, even when the app is closed' : 'Notifications are on');
+            }}
+          >
+            Turn on
+          </button>
+        )}
+      </div>
+      {perm === 'granted' && (
+        <button className="link-btn small" style={{ marginTop: 6 }} onClick={() => showPhoneNotification('Pronoia', 'Pebble here 💚 This is what an alert looks like.')}>
+          Send a test
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function Notifications() {
   const s = useAppState();
   const toast = useToast();
+  const me = useMyId('caregiver');
   const { caregiver, parent } = usePeople();
   const n = s.notifications;
   const preset = matchingPreset(n.events);
-
-  // Channels an event will actually use: chosen for it and switched on overall.
-  const live = (id: EventInfo['id']) => n.events[id].channels.filter((c) => n.channels[c]);
-  const heard = EVENTS.filter((e) => live(e.id).length > 0);
+  const isOn = (id: EventInfo['id']) => n.events[id].channels.length > 0;
+  const heard = EVENTS.filter((e) => isOn(e.id));
   const wakers = heard.filter((e) => e.canWake && n.events[e.id].wakeMe);
-  const helpReachable = (channels: Record<NotifyChannel, boolean>, picked = n.events.help.channels) =>
-    picked.some((c) => channels[c]);
-
-  const toggleChannel = (c: NotifyChannel, on: boolean) => {
-    const next = { ...n.channels, [c]: on };
-    if (!helpReachable(next)) {
-      toast(`Keep at least one way to hear when ${parent.name} needs help.`);
-      return;
-    }
-    deviceService.updateNotifications({ channels: next });
-  };
-
-  const toggleEventChannel = (e: EventInfo, c: NotifyChannel) => {
-    const cur = n.events[e.id].channels;
-    const picked = cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c];
-    if (e.required && !helpReachable(n.channels, picked)) {
-      toast(`"I need help" must always reach you. Pick another way first.`);
-      return;
-    }
-    deviceService.setEventPref(e.id, { channels: picked });
-  };
 
   return (
     <main className="screen">
       <AppBar title="Notifications" back />
       <Says mood="happy" size={40}>
-        You'll hear about {heard.length} of {EVENTS.length} things.{' '}
-        {wakers.length
-          ? `Only ${listOf(wakers.map((e) => e.short))} can wake you at night.`
-          : 'Nothing will wake you at night.'}
+        You’ll hear about {heard.length} of {EVENTS.length} things.{' '}
+        {wakers.length ? `Only ${listOf(wakers.map((e) => e.short))} can wake you at night.` : 'Nothing will wake you at night.'}
       </Says>
 
-      <SectionHead title="How to reach you" />
-      <section>
-        {CHANNELS.map((c) => (
-          <div key={c.id}>
-            <Toggle
-              label={c.label}
-              hint={c.id === 'whatsapp' ? caregiver.whatsapp : c.hint}
-              checked={n.channels[c.id]}
-              onChange={(v) => toggleChannel(c.id, v)}
-            />
-            {c.id === 'email' && n.channels.email && (
-              <label className="field" style={{ marginTop: -4 }}>
-                <span className="sr-only">Email address</span>
-                <input
-                  id="notify-email"
-                  className="input"
-                  type="email"
-                  value={n.email}
-                  onChange={(e) => deviceService.updateNotifications({ email: e.target.value })}
-                />
-              </label>
-            )}
-            {c.id === 'call' && (n.channels.sms || n.channels.call) && (
-              <label className="field" style={{ marginTop: -4 }}>
-                <span className="small">Phone for SMS and calls</span>
-                <input
-                  id="notify-phone"
-                  className="input"
-                  type="tel"
-                  value={n.phone}
-                  onChange={(e) => deviceService.updateNotifications({ phone: e.target.value })}
-                />
-              </label>
-            )}
-          </div>
-        ))}
+      <div style={{ marginTop: 16 }}>
+        <PhoneNotifications />
+      </div>
+      {me && (
         <button
-          className="btn btn--secondary btn--block"
-          style={{ marginTop: 8 }}
-          onClick={async () => {
-            const sent = await deviceService.sendTestNotification();
-            toast(`Test sent by ${sent.map((c) => CHANNELS.find((x) => x.id === c)!.label).join(', ')} (mock)`);
+          className="link-btn small"
+          style={{ marginTop: 6 }}
+          onClick={() => {
+            deviceService.notify(me, 'Pebble here 💚 This is a test notification from Pronoia.', { kind: 'system' });
+            toast('A test is in your inbox');
           }}
         >
-          Send me a test
+          Send a test to my inbox
         </button>
-      </section>
+      )}
 
       <SectionHead title="Start from" />
       <div className="preset-row" role="group" aria-label="Notification presets">
@@ -109,76 +105,47 @@ export function Notifications() {
           </button>
         ))}
       </div>
-      {!preset && <p className="small muted" style={{ margin: '8px 4px 0' }}>Custom: you've changed some of the choices below.</p>}
 
       {GROUPS.map((g) => (
         <section key={g}>
-          <SectionHead title={g === 'Pills and dispenser' ? 'Pills and station' : g} />
-          <div>
-            <ul className="list">
-              {EVENTS.filter((e) => e.group === g).map((e) => {
-                const pref = n.events[e.id];
-                const on = live(e.id).length > 0;
-                return (
-                  <li key={e.id} style={{ padding: '12px 0' }}>
-                    <div className="row-between row--top">
-                      <span className="grow">
-                        <span className="lrow-title block">{e.title}</span>
-                        <span className="block small muted">{e.hint}</span>
-                      </span>
-                      {!on && <span className="small muted">Off</span>}
-                      {e.required && <span className="small muted">Always on</span>}
-                    </div>
-                    <div className="ch-chips" role="group" aria-label={`Send "${e.title}" by`}>
-                      {e.allowed.filter((c) => n.channels[c]).map((c) => {
-                        const info = CHANNELS.find((x) => x.id === c)!;
-                        return (
-                          <button
-                            key={c}
-                            className="ch-chip"
-                            aria-pressed={pref.channels.includes(c)}
-                            onClick={() => toggleEventChannel(e, c)}
-                          >
-                            {info.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {e.id === 'dailyDigest' && on && (
-                      <label className="row small" style={{ marginTop: 10 }}>
-                        Send at
-                        <input
-                          id="digest-time"
-                          className="input input--inline"
-                          type="time"
-                          value={n.digestTime}
-                          onChange={(ev) => deviceService.updateNotifications({ digestTime: ev.target.value })}
-                        />
-                        <span className="muted">{cityShort(caregiver.timeZone)} time</span>
-                      </label>
-                    )}
-                    {e.id === 'refill' && on && (
-                      <p className="small muted" style={{ margin: '8px 0 0' }}>
-                        Sent {s.alerts.refillLeadDays} days before a slot runs out. Change this in Alerts.
-                      </p>
-                    )}
-                    {e.canWake && on && (
-                      <Toggle
-                        label="Can wake me in quiet hours"
-                        hint={`${hhmmLabel(s.alerts.quietStart)} to ${hhmmLabel(s.alerts.quietEnd)}`}
-                        checked={pref.wakeMe}
-                        onChange={(v) => deviceService.setEventPref(e.id, { wakeMe: v })}
-                      />
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          <SectionHead title={g} />
+          <ul className="list">
+            {EVENTS.filter((e) => e.group === g).map((e) => (
+              <li key={e.id}>
+                {e.required ? (
+                  <div className="toggle-row">
+                    <span>
+                      <span className="toggle-label">{e.title}</span>
+                      <span className="muted small block">{e.hint} Always on, and always wakes you.</span>
+                    </span>
+                  </div>
+                ) : (
+                  <Toggle label={e.title} hint={e.hint} checked={isOn(e.id)} onChange={(v) => deviceService.setEventPref(e.id, { channels: v ? ['push'] : [] })} />
+                )}
+                {!e.required && e.canWake && isOn(e.id) && (
+                  <div style={{ paddingLeft: 16, marginTop: -6 }}>
+                    <Toggle
+                      label="Can wake me in quiet hours"
+                      hint={`${hhmmLabel(s.alerts.quietStart)} to ${hhmmLabel(s.alerts.quietEnd)}, ${cityShort(caregiver.timeZone)} time`}
+                      checked={n.events[e.id].wakeMe}
+                      onChange={(v) => deviceService.setEventPref(e.id, { wakeMe: v })}
+                    />
+                  </div>
+                )}
+                {e.id === 'dailyDigest' && isOn(e.id) && (
+                  <label className="row small" style={{ padding: '0 0 10px 16px' }}>
+                    Send at
+                    <input className="input input--inline" type="time" value={n.digestTime} onChange={(ev) => deviceService.updateNotifications({ digestTime: ev.target.value })} />
+                  </label>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       ))}
-
-      <Placeholder>WhatsApp, email, SMS, calls and app notifications are all mocked. Tests appear under Settings → Messages.</Placeholder>
+      <p className="small muted" style={{ marginTop: 16 }}>
+        Missed check-ins go to {parent.name}’s refiller first, then to you, whatever these say.
+      </p>
     </main>
   );
 }

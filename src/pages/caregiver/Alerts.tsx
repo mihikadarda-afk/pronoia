@@ -42,7 +42,7 @@ export function Alerts() {
           </li>
           <li className="row-between" style={{ padding: '10px 0' }}>
             <span className="grow">
-              <span className="lrow-title block">WhatsApp you</span>
+              <span className="lrow-title block">Notify you</span>
               <span className="lrow-sub block">Minutes after the dose time</span>
             </span>
             <Stepper label="caregiver alert delay" value={a.caregiverAlertMin} min={a.parentReminderMin + 5} max={120} onChange={(v) => up({ caregiverAlertMin: v })} />
@@ -67,7 +67,7 @@ export function Alerts() {
           </li>
         </ul>
       ) : (
-        <Locked plan="phone">Get a WhatsApp alert when a dose isn’t taken, with the time and a confidence score.</Locked>
+        <Locked plan="phone">Get a notification when a dose isn’t taken, with the time and a confidence score.</Locked>
       )}
 
       <SectionHead title="Check-ins" />
@@ -120,14 +120,14 @@ export function Alerts() {
             </li>
             <li className="row-between" style={{ padding: '10px 0' }}>
               <span className="grow">
-                <span className="lrow-title block">2. WhatsApp {refiller?.name ?? 'the refiller'}</span>
+                <span className="lrow-title block">2. Notify {refiller?.name ?? 'the refiller'}</span>
                 <span className="lrow-sub block">{refiller ? `${refiller.relation}, nearby in ${refiller.city || where}` : 'Invite someone nearby in Family'}</span>
               </span>
               <Stepper label="refiller delay" value={c.refillerMin} min={c.repeatMin + 5} max={c.caregiverMin - 5} onChange={(v) => upC({ refillerMin: v })} />
             </li>
             <li className="row-between" style={{ padding: '10px 0' }}>
               <span className="grow">
-                <span className="lrow-title block">3. WhatsApp {caregivers.map((p) => p.name).join(' and ')}</span>
+                <span className="lrow-title block">3. Notify {caregivers.map((p) => p.name).join(' and ')}</span>
                 <span className="lrow-sub block">If {refiller?.name ?? 'nobody'} hasn’t replied OK. Ignores quiet hours.</span>
               </span>
               <Stepper label="caregiver delay" value={c.caregiverMin} min={c.refillerMin + 5} max={180} onChange={(v) => upC({ caregiverMin: v })} />
@@ -163,8 +163,8 @@ export function Alerts() {
         <li>
           <Link to="/care/notifications" className="link-row">
             <span className="grow">
-              <span className="lrow-title block">How alerts reach you</span>
-              <span className="lrow-sub block">WhatsApp, app, email, SMS or a call, for each kind of alert</span>
+              <span className="lrow-title block">Notifications</span>
+              <span className="lrow-sub block">Phone notifications, and which alerts may wake you</span>
             </span>
             <Chevron />
           </Link>

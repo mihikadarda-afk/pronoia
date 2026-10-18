@@ -12,17 +12,18 @@ import type {
   Medicine,
   NotificationSettings,
   Notice,
-  NotifyChannel,
   NotifyEvent,
   OutboxMessage,
   Pause,
+  PhotoRecord,
+  PhotoSettings,
   Person,
   Plan,
   Role,
   StationStatus,
 } from './types';
 import { defaultCheckInSettings, defaultNotifications } from './mockData';
-import { presetEvents, type Preset } from './notifications';
+import { normalizeEvents, presetEvents, type Preset } from './notifications';
 import { BaseService, normalizeCode, type AuthState, type DeviceService, type NewCircle } from './service';
 import { setAiTokenSource } from './aiCheck';
 import { zonedDate } from '../lib/time';
@@ -102,6 +103,19 @@ function personToRow(p: Partial<Person>): Row {
   return out;
 }
 
+const outboxFromRow = (m: Row): OutboxMessage => ({
+  id: m.id,
+  at: Date.parse(m.at),
+  channel: 'push',
+  to: m.to_name,
+  toId: m.to_member ?? undefined,
+  text: m.text,
+  read: m.read,
+  wake: m.wake,
+  ref: m.ref ?? undefined,
+  kind: m.kind ?? undefined,
+});
+
 const blankPerson = (id: string, role: Role): Person => ({
   id,
   name: '',
@@ -117,7 +131,7 @@ const blankPerson = (id: string, role: Role): Person => ({
 /** A harmless state for screens that render before data arrives. */
 function emptyState(): AppState {
   return {
-    version: 2,
+    version: 3,
     circleName: '',
     caregiverId: 'me',
     parentId: 'parent',
@@ -129,6 +143,8 @@ function emptyState(): AppState {
     checkInSettings: defaultCheckInSettings(),
     pause: null,
     familyNotes: [],
+    photos: [],
+    photoSettings: { times: ['11:00', '18:00'], windowMin: 120 },
     refillLog: [],
     alerts: DEFAULT_ALERTS,
     notifications: defaultNotifications(),
@@ -158,9 +174,9 @@ export class LiveDeviceService extends BaseService implements DeviceService {
   private authState: AuthState = { status: 'loading' };
   private session: Session | null = null;
   private circleId: string | null = null;
-  private myMemberId: string | null = null;
   private recordIds = new Map<string, string>(); // dose id -> database id
   private checkInIds = new Map<string, string>(); // check-in id -> database id
+  private photoIds = new Map<string, string>(); // photo moment id -> database id
   private lastBeat = 0;
   private listeners = new Set<() => void>();
   private errorListeners = new Set<(m: string) => void>();
@@ -287,7 +303,6 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       return;
     }
     this.circleId = me.circle_id;
-    this.myMemberId = me.id;
     this.watch();
     if (me.status !== 'active') {
       let caregiverName: string | undefined;
@@ -300,7 +315,10 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       return;
     }
     if (me.role === 'refiller') {
-      this.setAuth({ status: 'ready', role: 'refiller', ...base });
+      // Refillers only get their own notifications: refill reminders and missed check-ins.
+      const mineOnly = await this.call(this.sb.from('outbox').select('*').eq('to_member', me.id).order('at', { ascending: false }).limit(50));
+      this.state = { ...emptyState(), people: [personFromRow(me)], outbox: (mineOnly as Row[]).map(outboxFromRow) };
+      this.setAuth({ status: 'ready', role: 'refiller', memberId: me.id, ...base });
       return;
     }
 
@@ -308,7 +326,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     const caregiver = me.role === 'caregiver';
     const nothing = Promise.resolve({ data: [] as Row[], error: null });
     const since = new Date(Date.now() - 8 * 86_400_000).toISOString().slice(0, 10);
-    const [circles, members, meds, records, checks, notes, codes, devices, refills, notices, outbox] = await Promise.all([
+    const [circles, members, meds, records, checks, notes, photos, codes, devices, refills, notices, outbox] = await Promise.all([
       this.call(this.sb.from('circles').select('*').eq('id', cid)),
       this.call(this.sb.from('members').select('*').eq('circle_id', cid).order('created_at')),
       this.call(this.sb.from('medicines').select('*').eq('circle_id', cid).order('slot')),
@@ -321,6 +339,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       ),
       this.call(this.sb.from('check_ins').select('*').eq('circle_id', cid).gte('scheduled_date', since)),
       this.call(this.sb.from('family_notes').select('*').eq('circle_id', cid).order('at', { ascending: false }).limit(20)),
+      this.call(this.sb.from('photo_moments').select('*').eq('circle_id', cid).gte('scheduled_date', since).order('sent_at', { ascending: false }).limit(30)),
       caregiver
         ? this.call(this.sb.from('family_codes').select('*').eq('circle_id', cid).order('created_at', { ascending: false }).limit(1))
         : nothing.then((r) => r.data),
@@ -333,9 +352,8 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       caregiver
         ? this.call(this.sb.from('notices').select('*').eq('circle_id', cid).order('at', { ascending: false }).limit(50))
         : nothing.then((r) => r.data),
-      caregiver
-        ? this.call(this.sb.from('outbox').select('*').eq('circle_id', cid).order('at', { ascending: false }).limit(50))
-        : nothing.then((r) => r.data),
+      // Everyone's inbox: the notifications sent to them.
+      this.call(this.sb.from('outbox').select('*').eq('to_member', me.id).order('at', { ascending: false }).limit(60)),
     ]);
 
     const circle = (circles as Row[])[0];
@@ -391,15 +409,18 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
     const code = (codes as Row[])[0];
     const dev = (devices as Row[])[0];
-    const saved: NotificationSettings = circle?.notifications ?? defaultNotifications();
-    const prefs: NotificationSettings = {
-      ...saved,
-      email: saved.email || base.email || '',
-      phone: saved.phone || owner?.whatsapp || '',
-    };
+    const saved = (circle?.notifications ?? defaultNotifications()) as Partial<NotificationSettings>;
+    const prefs: NotificationSettings = { channels: { push: true }, digestTime: saved.digestTime ?? '08:00', events: normalizeEvents(saved.events) };
+    this.photoIds.clear();
+    const photoRecords: PhotoRecord[] = (photos as Row[]).map((r) => {
+      const dayOffset = offsetOf(r.scheduled_date);
+      const id = `${dayOffset}:${r.time}`;
+      this.photoIds.set(id, r.id);
+      return { id, dayOffset, time: r.time, askedBy: r.asked_by ?? undefined, photo: r.photo ?? undefined, sentAt: r.sent_at ? Date.parse(r.sent_at) : undefined, seen: r.seen };
+    });
 
     this.state = {
-      version: 2,
+      version: 3,
       circleName: circle?.name ?? '',
       caregiverId: me.role === 'caregiver' ? me.id : (owner?.id ?? me.id),
       parentId: parent?.id ?? 'parent',
@@ -440,9 +461,9 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       notices: (notices as Row[]).map(
         (n): Notice => ({ id: n.id, at: Date.parse(n.at), kind: n.kind, text: n.text, read: n.read }),
       ),
-      outbox: (outbox as Row[]).map(
-        (m): OutboxMessage => ({ id: m.id, at: Date.parse(m.at), channel: m.channel, to: m.to_name, text: m.text }),
-      ),
+      outbox: (outbox as Row[]).map(outboxFromRow),
+      photos: photoRecords,
+      photoSettings: { times: ['11:00', '18:00'], windowMin: 120, ...(circle?.photos ?? {}) } as PhotoSettings,
       plan: {
         tier: (circle?.plan?.tier as Plan) ?? 'free',
         billing: (circle?.plan?.billing as Billing) ?? 'monthly',
@@ -450,13 +471,13 @@ export class LiveDeviceService extends BaseService implements DeviceService {
       },
       updatedAt: Date.now(),
     };
-    this.setAuth({ status: 'ready', role: me.role, ...base });
+    this.setAuth({ status: 'ready', role: me.role, memberId: me.id, ...base });
   }
 
   /** Live updates: any change another phone or the dispenser makes triggers a re-read. */
   private watch() {
     if (this.channel) return;
-    const tables = ['circles', 'members', 'medicines', 'dose_records', 'check_ins', 'family_notes', 'refill_log', 'notices', 'outbox', 'devices'];
+    const tables = ['circles', 'members', 'medicines', 'dose_records', 'check_ins', 'family_notes', 'photo_moments', 'refill_log', 'notices', 'outbox', 'devices'];
     let ch = this.sb.channel('pronoia');
     for (const table of tables) {
       ch = ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => this.scheduleRefresh());
@@ -676,7 +697,7 @@ export class LiveDeviceService extends BaseService implements DeviceService {
     const device = this.state.plan.tier === 'device';
     const low = this.state.medicines.filter((m) => this.slotHealth(m) !== 'ok');
     const list = low.length ? low.map((m) => (device ? `slot ${m.slot} (${m.name})` : m.name)).join(', ') : 'all medicines';
-    this.sendWhatsApp(
+    this.notify(
       refiller.id,
       `Hi ${refiller.name}, Pebble here 💚 ${parent?.name ?? 'The'}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`,
     );
@@ -688,8 +709,48 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   // ---- messaging ----
 
-  sendWhatsApp(toPersonId: string, text: string) {
-    this.write(this.sb.rpc('send_message', { p_member: toPersonId, p_text: text, p_channel: 'whatsapp' }));
+  notify(toPersonId: string, text: string) {
+    this.write(this.sb.rpc('send_message', { p_member: toPersonId, p_text: text, p_channel: 'push' }));
+  }
+
+  markInboxRead(personId: string) {
+    if (!this.inbox(personId).some((m) => !m.read)) return;
+    this.patch({ outbox: this.state.outbox.map((m) => (m.toId === personId ? { ...m, read: true } : m)) });
+    this.write(this.sb.rpc('mark_inbox_read'));
+  }
+
+  /** `ref` is the check-in's database id, carried on the refiller's notification. */
+  replyOk(ref: string, note?: string) {
+    this.write(this.sb.rpc('refiller_reply_ok', { p_check_in: ref, p_note: note ?? null }));
+  }
+
+  nudgeParent(text: string) {
+    this.write(this.sb.rpc('nudge_parent', { p_text: text }));
+  }
+
+  async savePushSubscription(sub: PushSubscriptionJSON) {
+    await this.call(this.sb.rpc('save_push_subscription', { p_endpoint: sub.endpoint, p_p256dh: sub.keys?.p256dh, p_auth: sub.keys?.auth }));
+  }
+
+  askForPhoto() {
+    this.write(this.sb.rpc('ask_for_photo'));
+  }
+
+  sendPhoto(momentId: string | null, photo: string) {
+    const time = momentId ? momentId.slice(momentId.indexOf(':') + 1) : null;
+    this.write(this.sb.rpc('send_photo', { p_time: time, p_photo: photo }));
+  }
+
+  markPhotosSeen() {
+    if (this.state.photos.every((p) => !p.photo || p.seen)) return;
+    this.patch({ photos: this.state.photos.map((p) => (p.photo ? { ...p, seen: true } : p)) });
+    this.write(this.sb.rpc('mark_photos_seen'));
+  }
+
+  updatePhotoSettings(patch: Partial<PhotoSettings>) {
+    const photos = { ...this.state.photoSettings, ...patch };
+    this.patch({ photoSettings: photos });
+    this.write(this.sb.from('circles').update({ photos }).eq('id', this.circleId));
   }
 
   parentMessage(kind: 'ok' | 'call') {
@@ -737,24 +798,6 @@ export class LiveDeviceService extends BaseService implements DeviceService {
 
   applyNotificationPreset(preset: Preset) {
     this.saveNotifications({ ...this.state.notifications, events: presetEvents(preset) });
-  }
-
-  async sendTestNotification() {
-    const n = this.state.notifications;
-    const on = (Object.keys(n.channels) as NotifyChannel[]).filter((c) => n.channels[c]);
-    await Promise.all(
-      on.map((c) =>
-        this.call(
-          this.sb.rpc('send_message', {
-            p_member: this.myMemberId,
-            p_text: 'Pebble here 💚 This is a test notification from Pronoia.',
-            p_channel: c,
-          }),
-        ),
-      ),
-    );
-    this.scheduleRefresh();
-    return on;
   }
 
   async pairDevice(code: string) {

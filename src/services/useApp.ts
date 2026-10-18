@@ -37,3 +37,13 @@ export function useAuth() {
 export function usePlan() {
   return useAppState().plan.tier;
 }
+
+/** Whose inbox this phone shows: the signed-in member when live, the chosen person on this phone. */
+export function useMyId(role: 'caregiver' | 'parent' | 'refiller'): string | undefined {
+  const s = useAppState();
+  const auth = useAuth();
+  if (deviceService.mode === 'live') return auth.memberId;
+  if (role === 'caregiver') return s.caregiverId;
+  if (role === 'parent') return s.parentId;
+  return s.people.find((p) => p.role === 'refiller' && p.status === 'active')?.id;
+}

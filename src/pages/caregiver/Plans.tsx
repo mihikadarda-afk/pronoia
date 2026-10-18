@@ -14,7 +14,7 @@ const FEATURES: { label: string; on: Plan[] }[] = [
   { label: 'Video of each dose, checked by AI', on: ['phone', 'device'] },
   { label: 'Filmed by an old phone on a stand', on: ['phone'] },
   { label: 'Filmed and uploaded by the dispenser', on: ['device'] },
-  { label: 'WhatsApp alerts with confidence', on: ['phone', 'device'] },
+  { label: 'Notifications with a confidence score', on: ['phone', 'device'] },
   { label: 'Missed check-ins alert the refiller, then you', on: ['phone', 'device'] },
   { label: 'Gives out only the right pill', on: ['device'] },
   { label: 'Pill counts and early refill reminders', on: ['device'] },

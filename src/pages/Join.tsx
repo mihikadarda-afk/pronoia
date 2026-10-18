@@ -210,7 +210,7 @@ export function Join() {
             </PebbleSays>
             <p style={{ fontSize: 18 }}>
               {role === 'refiller'
-                ? `Once ${caregiver.name} approves, refill reminders and check-in requests come to you on WhatsApp. No app needed.`
+                ? `Once ${caregiver.name} approves, refill reminders and check-in requests come to you as notifications in Pronoia.`
                 : `Once ${caregiver.name} approves, you’ll see every dose and check-in too.`}
             </p>
           </div>

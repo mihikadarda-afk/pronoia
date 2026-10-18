@@ -142,14 +142,14 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
 
       {(dose.status === 'missed' || dose.status === 'unmarked') && (
         <button
-          className="btn btn--whatsapp btn--block"
+          className="btn btn--block"
           style={{ marginTop: 14 }}
           onClick={() => {
-            deviceService.sendWhatsApp(parent.id, `Hi ${parent.name}, just checking in about your ${pillName(dose.medicine.purpose)} 💚`);
-            toast(`Sent to ${parent.name} (WhatsApp is mocked)`);
+            deviceService.nudgeParent(`Just checking about your ${dose.medicine.nickname || pillName(dose.medicine.purpose)} 💚`);
+            toast(`${parent.name} will see your reminder on their phone`);
           }}
         >
-          Message {parent.name} on WhatsApp
+          Send {parent.name} a gentle reminder
         </button>
       )}
 
@@ -206,10 +206,10 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
 
       {c.status === 'missed_notified' && (
         <div className="stack" style={{ marginTop: 14 }}>
-          {parent.whatsapp && <p className="small strong" style={{ margin: 0 }}>Call {parent.name}: <span className="num">{parent.whatsapp}</span></p>}
+          {parent.whatsapp && <p className="small strong" style={{ margin: 0 }}>Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></p>}
         </div>
       )}
-      {c.status === 'help' && parent.whatsapp && <p className="small strong">Call {parent.name}: <span className="num">{parent.whatsapp}</span></p>}
+      {c.status === 'help' && parent.whatsapp && <p className="small strong">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></p>}
 
       {c.status === 'checked_in' && !voice && (
         <div className="btn-row" style={{ marginTop: 14 }}>

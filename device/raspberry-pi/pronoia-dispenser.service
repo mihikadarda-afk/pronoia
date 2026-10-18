@@ -1,0 +1,15 @@
+# sudo cp pronoia-dispenser.service /etc/systemd/system/ && sudo systemctl enable --now pronoia-dispenser
+[Unit]
+Description=Pronoia dispenser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/pronoia/device/raspberry-pi
+ExecStart=/usr/bin/python3 pronoia_dispenser.py --config config.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -142,5 +142,62 @@ do $$ begin
 end $$;
 reset role;
 
+-- In-app notifications: Ravi sees only his own, and replies OK from one
+update circles set plan = '{"tier":"phone"}', pause = null,
+  checkins = jsonb_set(checkins, '{times}', jsonb_build_array(pg_temp.ago(50), pg_temp.ago(1), pg_temp.ago(30)));
+select escalate_check_ins();
+do $$ begin
+  assert (select count(*) from outbox where channel <> 'push') = 0, 'every notification is in-app';
+  assert (select ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1) is not null, 'Ravi''s notification points at the check-in';
+end $$;
+select ref as ravi_ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1 \gset
+select pg_temp.as_user(4); set role authenticated;
+do $$ begin
+  assert (select count(*) from outbox) >= 1 and (select count(*) from outbox where to_name <> 'Ravi') = 0, 'Ravi reads only his own notifications';
+end $$;
+select refiller_reply_ok(:'ravi_ref'::uuid, 'He was at the temple');
+select mark_inbox_read();
+reset role;
+do $$ begin
+  assert (select status from check_ins where id = (select ref from outbox where to_name = 'Ravi' and kind = 'checkin' order by at desc limit 1)::uuid) = 'refiller_ok';
+  assert (select note from check_ins where status = 'refiller_ok' limit 1) = 'He was at the temple';
+  assert (select bool_and(read) from outbox where to_name = 'Ravi'), 'Ravi''s inbox is read';
+  assert (select count(*) from outbox where to_name = 'Mihika' and text like 'Ravi checked on Nanaji: okay. He was at the temple%') = 1, 'Mihika hears Ravi checked';
+end $$;
+
+-- Smile time: Mihika asks, Nanaji sends a photo, Mihika is told
+select pg_temp.as_user(1); set role authenticated;
+select ask_for_photo();
+select nudge_parent('Loved your photo');
+select save_push_subscription('https://push.example.com/abc', 'p256', 'auth');
+reset role;
+select time as photo_time from photo_moments limit 1 \gset
+select pg_temp.as_user(2); set role authenticated;
+select send_photo(:'photo_time', 'data:image/jpeg;base64,AAAA');
+do $$ begin
+  assert (select count(*) from family_notes where kind = 'note' and text = 'Loved your photo') = 1, 'Nanaji sees the note';
+  assert (select count(*) from photo_moments where photo is not null) = 1, 'Nanaji sees the photo moment';
+end $$;
+reset role;
+do $$ declare oid uuid; begin
+  assert (select count(*) from outbox where to_name = 'Mihika' and kind = 'photo') = 1, 'Mihika is told about the photo';
+  select id into oid from outbox where to_name = 'Mihika' and kind = 'photo';
+  assert (select count(*) from push_targets(oid)) = 1, 'push goes to Mihika''s phone';
+  assert (select endpoint from push_targets(oid)) = 'https://push.example.com/abc';
+end $$;
+select pg_temp.as_user(4); set role authenticated;
+do $$ begin assert (select count(*) from photo_moments) = 0, 'refiller can''t see photos'; end $$;
+reset role;
+
+-- The dispenser's buttons
+set role anon;
+select device_button('PRN-TEST-01', 'sekret', 'ok');
+select device_button('PRN-TEST-01', 'sekret', 'help');
+reset role;
+do $$ begin
+  assert (select count(*) from check_ins where events::text like '%I''m okay button%') = 1, 'button check-in';
+  assert (select count(*) from outbox where text like '%pressed I need help on the dispenser%') >= 2, 'button help reaches everyone';
+end $$;
+
 select purge_old_frames();
 \echo ALL GOOD

@@ -23,11 +23,12 @@ export function ParentToday() {
   useNow();
   const t = useT();
   const nav = useNavigate();
-  const { parent } = usePeople();
+  const { parent, caregiver } = usePeople();
   const doses = deviceService.dosesForDay(0);
   const current = deviceService.currentDose();
   const next = current ?? doses.find((d) => d.status === 'upcoming');
   const notes = s.familyNotes.filter((n) => !n.seen);
+  const photoAsk = deviceService.currentPhotoRequest();
 
   // Hearts and voice notes count as seen once they've been on screen for a bit.
   useEffect(() => {
@@ -49,10 +50,19 @@ export function ParentToday() {
 
       {notes.map((n) => (
         <div key={n.id} className="p-note" style={{ marginTop: 16 }}>
-          <span className="grow">{n.kind === 'heart' ? t.familyHeart(n.from) : t.familyVoice(n.from)}</span>
+          <span className="grow">{n.kind === 'heart' ? t.familyHeart(n.from) : n.kind === 'note' ? t.familyNote(n.from, n.text ?? '') : t.familyVoice(n.from)}</span>
           {n.kind === 'voice' && <span className="small muted num">0:{String(n.seconds ?? 0).padStart(2, '0')}</span>}
         </div>
       ))}
+
+      {photoAsk && (
+        <div className="p-note" style={{ marginTop: 16, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+          <span>{t.smileTime(caregiver.name)}</span>
+          <button className="p-btn p-btn--small" onClick={() => nav('/parent/photo')}>
+            {t.takePhoto}
+          </button>
+        </div>
+      )}
 
       {s.pause && (
         <div className="p-pause" style={{ marginTop: 16 }}>
