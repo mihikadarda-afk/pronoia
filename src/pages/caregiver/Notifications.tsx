@@ -65,7 +65,7 @@ export function Notifications() {
   const s = useAppState();
   const toast = useToast();
   const me = useMyId('caregiver');
-  const { caregiver, parent } = usePeople();
+  const { caregiver } = usePeople();
   const n = s.notifications;
   const preset = matchingPreset(n.events);
   const isOn = (id: EventInfo['id']) => n.events[id].channels.length > 0;
@@ -144,7 +144,7 @@ export function Notifications() {
         </section>
       ))}
       <p className="small muted" style={{ marginTop: 16 }}>
-        Missed check-ins go to {parent.name}’s refiller first, then to you, whatever these say.
+        Missed check-ins always reach you, whatever these say.
       </p>
     </main>
   );

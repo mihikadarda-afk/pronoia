@@ -1,15 +1,16 @@
 import { useNavigate } from 'react-router-dom';
 import { TextSizePicker } from '../../components/TextSize';
-import { AppBar, Avatar, ConfirmButton, LinkRow, PlanBadge, SectionHead, Status } from '../../components/ui';
+import { AppBar, Avatar, ConfirmButton, LinkRow, PlanBadge, SectionHead, Status, useToast } from '../../components/ui';
 import { useSession } from '../../lib/session';
-import { deviceService, isLocal } from '../../services/deviceService';
-import { planInfo } from '../../services/plans';
+import { deviceService } from '../../services/deviceService';
+import { PLANS, planInfo } from '../../services/plans';
 import { useAppState, useAuth, useMyId, usePeople } from '../../services/useApp';
 
 export function Settings() {
   const s = useAppState();
   const auth = useAuth();
   const nav = useNavigate();
+  const toast = useToast();
   const session = useSession();
   const { caregiver, parent } = usePeople();
   const plan = s.plan.tier;
@@ -34,9 +35,31 @@ export function Settings() {
         </div>
       </div>
 
+      <SectionHead title="Version" />
+      <span className="segmented segmented--block" role="radiogroup" aria-label="Which version you're on">
+        {PLANS.map((p) => (
+          <button
+            key={p.id}
+            role="radio"
+            aria-checked={plan === p.id}
+            aria-pressed={plan === p.id}
+            onClick={() => {
+              if (p.id === plan) return;
+              deviceService.setPlan(p.id);
+              toast(`Switched to ${p.name}`);
+              // The new version's camera needs setting up: the old phone, or the dispenser.
+              if ((p.id === 'phone' && !s.station.linked) || (p.id === 'device' && !s.device.paired)) nav('/care/station');
+            }}
+          >
+            {p.name}
+          </button>
+        ))}
+      </span>
+      <p className="small muted" style={{ margin: '8px 0 0' }}>{planInfo(plan).video}</p>
+
       <SectionHead title="Care" />
       <ul className="list">
-        <LinkRow to="/care/plans" title="Plan" sub={planInfo(plan).short} end={<span className="small muted">{planInfo(plan).name}</span>} />
+        <LinkRow to="/care/plans" title="Plan and billing" sub="Compare the versions" end={<span className="small muted">{planInfo(plan).name}</span>} />
         <LinkRow to="/care/alerts" title="Alerts and check-ins" sub="Delays, quiet hours, check-in times, who’s alerted" />
         <LinkRow to="/care/notifications" title="Notifications" sub="Phone notifications, and what you hear about" />
         <LinkRow to="/care/photos" title="Smile time" sub="Photo moments from your parent" />
@@ -55,15 +78,17 @@ export function Settings() {
       </ul>
 
       <div style={{ marginTop: 24 }}>
-        {isLocal ? (
-          <button className="btn btn--secondary btn--block" onClick={() => { session.signOut(); nav('/'); }}>
-            Switch person
-          </button>
-        ) : (
-          <ConfirmButton className="btn btn--secondary btn--block" confirmLabel="Tap again to sign out" onConfirm={() => deviceService.signOut()}>
-            Sign out
-          </ConfirmButton>
-        )}
+        <ConfirmButton
+          className="btn btn--secondary btn--block"
+          confirmLabel="Tap again to log out"
+          onConfirm={() => {
+            session.signOut();
+            deviceService.signOut();
+            nav('/');
+          }}
+        >
+          Log out
+        </ConfirmButton>
       </div>
     </main>
   );

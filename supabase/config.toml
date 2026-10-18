@@ -180,7 +180,7 @@ enable_anonymous_sign_ins = true
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -414,13 +414,3 @@ enabled = true
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
 
-# Pronoia signs caregivers in with a 6-digit code, so every sign-in email shows {{ .Token }}.
-# On a hosted project, paste supabase/templates/sign-in-code.html into
-# Authentication → Email Templates → "Magic Link" and "Confirm signup".
-[auth.email.template.magic_link]
-subject = "Your Pronoia sign-in code"
-content_path = "./supabase/templates/sign-in-code.html"
-
-[auth.email.template.confirmation]
-subject = "Your Pronoia sign-in code"
-content_path = "./supabase/templates/sign-in-code.html"

@@ -1,33 +1,28 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { AppBar, PillPhoto, Says, SectionHead, Status, useToast } from '../../components/ui';
-import { fmtDate, relTime } from '../../lib/time';
+import { fmtDate } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 
 export function Refills() {
   const s = useAppState();
   const toast = useToast();
-  const { parent, refiller } = usePeople();
+  const { parent } = usePeople();
   const [logging, setLogging] = useState(false);
-  const now = deviceService.now();
   const device = s.plan.tier === 'device';
   const meds = [...s.medicines].sort((a, b) => deviceService.refillInfo(a).refillBy.getTime() - deviceService.refillInfo(b).refillBy.getTime());
   const due = meds.filter((m) => deviceService.slotHealth(m) !== 'ok');
   const [picked, setPicked] = useState<number[]>(() => (device ? due : meds).map((m) => m.slot));
   const next = meds[0];
   const nextInfo = next && deviceService.refillInfo(next);
-  const lastReminder = refiller && s.outbox.find((m) => m.to === refiller.name && m.text.includes('refill'));
 
   const line = !next
     ? 'No medicines yet, so nothing to refill.'
     : due.length === 0
       ? device
         ? `Every slot has more than ${s.alerts.refillLeadDays} days of pills.`
-        : `The next refill is ${fmtDate(nextInfo!.refillBy, parent.timeZone)}. I’ll remind ${refiller?.name ?? 'the refiller'} a few days before.`
-      : lastReminder
-        ? `Running low on ${due.map((m) => m.name).join(' and ')}. I’ve reminded ${refiller!.name}.`
-        : `Running low on ${due.map((m) => m.name).join(' and ')}. Want me to remind ${refiller?.name ?? 'the refiller'}?`;
+        : `The next refill is ${fmtDate(nextInfo!.refillBy, parent.timeZone)}. I’ll remind you a few days before.`
+      : `Running low on ${due.map((m) => m.name).join(' and ')}. Log a refill once the pills are topped up.`;
 
   return (
     <main className="screen">
@@ -47,25 +42,6 @@ export function Refills() {
               {device ? `${next.name}: about ${nextInfo.daysLeft} days left` : 'Monthly refill'}
             </span>
           </div>
-          {refiller ? (
-            <>
-              <button
-                className="btn btn--block"
-                style={{ marginTop: 12 }}
-                onClick={() => {
-                  deviceService.remindRefiller();
-                  toast(`Reminder sent to ${refiller.name}`);
-                }}
-              >
-                Remind {refiller.name}
-              </button>
-              {lastReminder && <p className="tiny muted center" style={{ margin: '8px 0 0' }}>Last reminder {relTime(lastReminder.at, now.getTime())}</p>}
-            </>
-          ) : (
-            <Link to="/care/family" className="btn btn--secondary btn--block" style={{ marginTop: 12 }}>
-              Invite someone nearby to help with refills
-            </Link>
-          )}
         </section>
       )}
 

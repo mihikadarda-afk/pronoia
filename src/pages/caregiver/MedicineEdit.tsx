@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { AppBar, ConfirmButton, PillPhoto, Says, SectionHead, Toggle, readImage, useToast } from '../../components/ui';
+import { Camera } from '../../components/Camera';
+import { AppBar, ConfirmButton, PillPhoto, Says, SectionHead, Toggle, useToast } from '../../components/ui';
 import { cityShort, fmtTime, hhmmLabel, instantFor } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
@@ -18,6 +19,7 @@ export function MedicineEdit() {
   const existing = s.medicines.find((m) => m.slot === slot);
   const [draft, setDraft] = useState<Medicine | null>(existing ?? null);
   const [newTime, setNewTime] = useState('12:00');
+  const [camera, setCamera] = useState(false);
   const device = s.plan.tier === 'device';
 
   useEffect(() => setDraft(existing ?? null), [existing?.slot]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -50,19 +52,9 @@ export function MedicineEdit() {
       <div className="row" style={{ margin: '4px 0 16px' }}>
         <PillPhoto med={draft} size={72} />
         <div className="stack" style={{ gap: 4 }}>
-          <label className="link-btn" style={{ cursor: 'pointer' }}>
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (f) set({ photo: await readImage(f, 480) });
-              }}
-            />
+          <button className="link-btn" onClick={() => setCamera(true)}>
             {draft.photo ? 'Take a new photo' : 'Take a photo of the pill'}
-          </label>
+          </button>
           {draft.photo && (
             <button className="link-btn link-btn--quiet small" style={{ display: 'block' }} onClick={() => set({ photo: undefined })}>
               Remove photo
@@ -179,6 +171,18 @@ export function MedicineEdit() {
           Remove this medicine
         </ConfirmButton>
       </div>
+      {camera && (
+        <Camera
+          facing="environment"
+          maxSize={480}
+          title="Photo of the pill"
+          onClose={() => setCamera(false)}
+          onCapture={(photo) => {
+            set({ photo });
+            setCamera(false);
+          }}
+        />
+      )}
     </main>
   );
 }

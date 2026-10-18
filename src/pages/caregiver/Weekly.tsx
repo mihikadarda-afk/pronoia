@@ -11,7 +11,7 @@ const DAYS = [-6, -5, -4, -3, -2, -1, 0];
 
 export function Weekly() {
   const s = useAppState();
-  const { parent, refiller } = usePeople();
+  const { parent } = usePeople();
   const [doseId, setDoseId] = useState<string | null>(null);
   const [checkId, setCheckId] = useState<string | null>(null);
   const plan = s.plan.tier;
@@ -40,7 +40,7 @@ export function Weekly() {
   const checkTimes = s.checkInSettings.times;
 
   const doseCell = (d: Dose | undefined): Tone | 'none' => (d ? doseStatus(d, plan).tone : 'none');
-  const checkCell = (c: CheckIn | undefined): Tone | 'none' => (c ? (c.status === 'paused' ? 'quiet' : checkInStatus(c, refiller?.name, tz).tone) : 'none');
+  const checkCell = (c: CheckIn | undefined): Tone | 'none' => (c ? (c.status === 'paused' ? 'quiet' : checkInStatus(c, tz).tone) : 'none');
 
   return (
     <main className="screen">
@@ -76,7 +76,7 @@ export function Weekly() {
               sub="Check-in"
               cells={checksByDay.map((cs) => {
                 const c = cs.find((x) => x.time === t);
-                return { tone: checkCell(c), onClick: c ? () => setCheckId(c.id) : undefined, label: c ? checkInStatus(c, refiller?.name, tz).text : 'No data' };
+                return { tone: checkCell(c), onClick: c ? () => setCheckId(c.id) : undefined, label: c ? checkInStatus(c, tz).text : 'No data' };
               })}
             />
           ))}

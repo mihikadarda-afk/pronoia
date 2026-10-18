@@ -4,7 +4,7 @@ A mobile-first app that tells an adult child far away (say, Mihika in New York) 
 
 It has three sides that link with a family code:
 
-- **Caregiver**: Today (doses and check-ins on one timeline, in both time zones), medicines, family, settings, plans, alerts, weekly summary, refills, privacy.
+- **Caregiver**: logs in with email and password. Today (doses and check-ins on one timeline, in both time zones), medicines, family, settings, plans, alerts, weekly summary, refills, privacy.
 - **Parent**: huge text and big buttons in English, Hindi or Gujarati. The next pill with its photo, I took it, a one-tap I’m okay, I’m going out, Message my family, I need help.
 - **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, films a 12-second video and asks Gemini whether the pill was taken.
 
@@ -15,14 +15,14 @@ It has three sides that link with a family code:
 | Plan | Price | What the family gets |
 | --- | --- | --- |
 | Free | $0 | Reminders with a photo of the right pill, I took it taps, daily check-ins, a simple log. No camera or video at all, and no caregiver alerts |
-| Phone | $9 a month or $79 a year | An old phone on a stand films a 12-second video at each dose for the AI check. Notifications with a confidence score; missed check-ins escalate to the refiller, then the caregiver |
-| Device | $299 once + $15 a month | The Pronoia dispenser: 5 slots, weight sensors, I’m okay button, pill counts, defect replacement. Its own camera films each dose and uploads the clip for the AI check |
+| Phone | $9 a month or $79 a year | An old phone on a stand films a 12-second video at each dose for the AI check. Notifications with a confidence score; missed check-ins alert the caregiver |
+| Dispenser | $299 once + $15 a month | The Pronoia dispenser: 5 slots, weight sensors, I’m okay button, pill counts, defect replacement. Its own camera films each dose and uploads the clip for the AI check |
 
 Higher-plan features show as soft locked cards with an Upgrade link, never pop-ups.
 
 ## Notifications
 
-Every alert is a notification in the app: it lands in the person’s inbox (the bell on Today, or the refiller’s screen) and on their phone once they tap **Turn on** under **Settings → Notifications**. While Pronoia is open or in the background, the app shows them itself. With the live backend and VAPID keys, **Web Push** also reaches phones when the app is closed: a Supabase database webhook on `outbox` inserts calls `/api/push`, which sends to every phone that person turned notifications on for. Anything that may not wake the caregiver waits in the inbox during their quiet hours. On iPhone, Web Push works once Pronoia is added to the Home Screen.
+Every alert is a notification in the app: it lands in the person’s inbox (the bell on Today) and on their phone once they tap **Turn on** under **Settings → Notifications**. While Pronoia is open or in the background, the app shows them itself. With the live backend and VAPID keys, **Web Push** also reaches phones when the app is closed: a Supabase database webhook on `outbox` inserts calls `/api/push`, which sends to every phone that person turned notifications on for. Anything that may not wake the caregiver waits in the inbox during their quiet hours. On iPhone, Web Push works once Pronoia is added to the Home Screen.
 
 ## Smile time
 
@@ -34,11 +34,11 @@ Like BeReal, a few times a day (11 AM and 6 PM by default, up to three) the pare
 
 ## Check-ins
 
-A few times a day (10:30 AM and 4:30 PM by default, never in sleep hours) Pebble says hi and the parent taps I’m okay. Every taken dose counts too. On Phone and Device, a missed check-in chimes again at +10 min, notifies the refiller at +25 (who taps **Reply OK** after looking in), and the caregiver at +45 if the refiller hasn’t replied OK (ignoring quiet hours). I need help skips straight to everyone. The camera is never used for check-ins, and nothing claims to be fall detection.
+A few times a day (10:30 AM and 4:30 PM by default, never in sleep hours) Pebble says hi and the parent taps I’m okay. Every taken dose counts too. On Phone and Dispenser, a missed check-in chimes again at +10 min and notifies the caregivers at +30 (ignoring quiet hours). I need help skips straight to every caregiver. Nothing scheduled before the family was set up counts as missed. The camera is never used for check-ins, and nothing claims to be fall detection.
 
 ## Modes
 
-- **This phone only**: used when Supabase isn’t configured (or with `?local`). Everything is kept in this browser and starts with a sample family (Mihika, Nanaji, Ravi) and a week of history, which **Set up a family** lets you replace. The front page lets you open the caregiver, parent or dose station view on the same phone.
+- **This phone only**: used when Supabase isn’t configured (or with `?local`). Accounts (email and a salted password hash) and the family are kept in this browser. It starts empty: create an account, then set up the family. The parent and dose station views open on the same phone with the family code.
 - **Live**: real accounts and data in [Supabase](https://supabase.com), used when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
 
 ## Run it
@@ -93,7 +93,7 @@ Without the Supabase variables the site keeps everything on each visitor’s pho
 1. Create a project at [supabase.com](https://supabase.com).
 2. **Database → Extensions**: turn on **pg_cron** first, so the scheduled jobs get created.
 3. Create the database, either way:
-   - **SQL Editor**: paste and run each file in `supabase/migrations/`, oldest first (`20261008…`, then `20261018…`, then `20261020…`).
+   - **SQL Editor**: paste and run each file in `supabase/migrations/`, oldest first (`20261008…`, `20261018…`, `20261020…`, then `20261025…`).
    - Or the CLI: `npx supabase login`, `npx supabase link --project-ref <your-project-ref>`, `npx supabase db push`.
 
    This creates the tables, row-level security, the server functions and the scheduled jobs.
@@ -101,10 +101,10 @@ Without the Supabase variables the site keeps everything on each visitor’s pho
 Either kind of API key works: the newer publishable and secret keys (`sb_publishable_…`, `sb_secret_…`), or the older anon and service_role keys.
 4. In the dashboard:
    - **Integrations → Cron**: you should see `pronoia-missed-doses`, `pronoia-check-ins` and `pronoia-frames`. If they're missing, pg_cron wasn't on: turn it on and run the last `do $$ ... $$` block of the first two migrations again.
-   - **Authentication → Sign In / Providers**: keep **Email** on and turn on **Allow anonymous sign-ins** (parents and refill helpers join with a code, not an email). Consider turning on CAPTCHA, since anonymous sign-ins are open to anyone.
-   - **Authentication → Email Templates**: paste `supabase/templates/sign-in-code.html` into both **Magic Link** and **Confirm signup**, so the email shows the 6-digit code.
+   - **Authentication → Sign In / Providers**: keep **Email** on and turn on **Allow anonymous sign-ins** (the parent’s phone and the dose station join with a code, not an account). Consider turning on CAPTCHA, since anonymous sign-ins are open to anyone.
+   - **Authentication → Sign In / Providers → Email**: caregivers log in with email and password. With **Confirm email** on (the default), a new account opens the link in its email once before logging in. **Forgot your password?** sends a reset link that opens Pronoia to choose a new one.
    - **Authentication → SMTP Settings**: set up your own email sender. The built-in one only sends a few emails an hour.
-   - **Authentication → URL Configuration**: set **Site URL** to where you host the app.
+   - **Authentication → URL Configuration**: set **Site URL** to where you host the app, and add it under **Redirect URLs**, so confirm and reset links come back to it.
 
 ### 2. The app
 
@@ -189,7 +189,7 @@ tests/
 
 ## Try it
 
-1. Open the app and tap **Set up a family**. Pick a plan first: Free, Phone or Device. The steps after it follow the plan: Phone adds setting up the old phone, Device adds pairing the dispenser.
-2. On another phone (or from the front page of the same one), **I have a family code → I’m the parent**. On the Phone plan, the old phone joins with **This is the dose station** and a new code.
+1. Open the app, tap **Create account**, then set up the family. Pick the version next: Free, Phone or Dispenser. The steps after it follow it: Phone adds setting up the old phone, Dispenser adds pairing it. Switch any time under **Settings → Version**.
+2. On another phone, **I have a family code → I’m the parent**. On the Phone plan, the old phone joins with **This is the dose station** and a new code.
 3. At dose time the station chimes, shows the pill, films 12 seconds and sends the video to the AI check. The caregiver sees Taken, or Needs a look with **Watch the video**.
 4. **Settings → Plans** compares the three plans; **This week** has the week grid. Every notification is in the inbox (the bell on Today).

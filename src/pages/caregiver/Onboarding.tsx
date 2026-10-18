@@ -5,11 +5,13 @@ import { PlanPicker } from './Plans';
 import { PhoneNotifications } from './Notifications';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { Pebble, type PebbleMood } from '../../components/Pebble';
+import { Camera } from '../../components/Camera';
 import { Avatar, PillPhoto, Says, readImage } from '../../components/ui';
 import { useSession } from '../../lib/session';
 import { cityShort, fmtTime, hhmmLabel } from '../../lib/time';
-import { deviceService, isLocal } from '../../services/deviceService';
+import { deviceService } from '../../services/deviceService';
 import { useAppState, useAuth, usePeople } from '../../services/useApp';
+import { planInfo } from '../../services/plans';
 import type { Billing, Plan } from '../../services/types';
 
 const ZONES = ['Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Asia/Dubai', 'Australia/Sydney'];
@@ -21,7 +23,7 @@ export function Onboarding() {
   const nav = useNavigate();
   const session = useSession();
   const auth = useAuth();
-  const { caregiver, parent, refiller } = usePeople();
+  const { caregiver, parent } = usePeople();
   const [step, setStep] = useState<Step>('welcome');
   const [plan, setPlan] = useState<Plan>(s.plan.tier);
   const [billing, setBilling] = useState<Billing>(s.plan.billing);
@@ -34,21 +36,19 @@ export function Onboarding() {
   const prev = () => (i === 0 ? nav('/') : setStep(steps[i - 1]));
   const now = deviceService.now();
 
-  if (!isLocal) {
-    if (auth.status === 'signed-out') return <Navigate to="/" replace />;
-    if (auth.status === 'no-circle') return <CreateCircle onCreated={() => setStep('parent')} />;
-    if (auth.status !== 'ready') return null;
-  }
+  if (auth.status === 'signed-out') return <Navigate to="/" replace />;
+  if (auth.status === 'no-circle') return <CreateCircle onCreated={() => setStep('plan')} />;
+  if (auth.status !== 'ready') return null;
 
   const say: Record<Step, [PebbleMood, ReactNode]> = {
     welcome: ['waving', 'Hi, I’m Pebble. I’ll help you know the right pill was taken, without the 3am phone call.'],
     parent: ['happy', 'Who are we looking after?'],
     zones: ['thinking', 'Where is everyone? I show every time in both places.'],
-    plan: ['happy', 'First, how should I know the pill was taken? You can change this any time.'],
+    plan: ['happy', 'Which version are you using? It decides how I know the pill was taken. You can switch any time in Settings.'],
     medicines: ['waving', `Add each medicine with a photo of the real pill. ${parent.name || 'Your parent'} will see that photo at dose time.`],
-    checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.${plan === 'free' ? '' : ' If a check-in is missed, I ask the refiller first, then you.'}`],
+    checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.${plan === 'free' ? '' : ' If a check-in is missed, I notify you.'}`],
     phones: ['happy', 'Alerts come as notifications in the app. Turn them on for this phone, and add numbers so you can call each other.'],
-    code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I’m the parent and type this code.`],
+    code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I have a family code, then I’m the parent, and type this code.`],
     station: ['thinking', `Now the old phone. It films a 12-second video at each dose, and nothing at any other time.`],
     device: ['thinking', 'Now the dispenser. Its code is printed on the bottom. It films each dose with its own camera and uploads the video.'],
     done: ['celebrating', 'Your family is connected!'],
@@ -119,7 +119,7 @@ export function Onboarding() {
                     if (f) deviceService.updatePerson(parent.id, { photo: await readImage(f, 320) });
                   }}
                 />
-                {parent.photo ? 'Change photo' : 'Add a photo'}
+                {parent.photo ? 'Change photo' : 'Choose a photo'}
               </label>
             </div>
             <label className="field">
@@ -195,14 +195,6 @@ export function Onboarding() {
               <span>{parent.name}’s phone number</span>
               <input className="input" type="tel" value={parent.whatsapp} onChange={(e) => deviceService.updatePerson(parent.id, { whatsapp: e.target.value })} />
             </label>
-            {refiller ? (
-              <label className="field">
-                <span>{refiller.name}, who refills the pills</span>
-                <input className="input" type="tel" value={refiller.whatsapp} onChange={(e) => deviceService.updatePerson(refiller.id, { whatsapp: e.target.value })} />
-              </label>
-            ) : (
-              <p className="small muted">Someone nearby who refills the pills can join with the family code on the next step.</p>
-            )}
           </>
         )}
 
@@ -248,7 +240,7 @@ export function Onboarding() {
               next();
             }}
           >
-            Continue with {plan === 'free' ? 'Free' : plan === 'phone' ? 'Phone' : 'Device'}
+            Continue with {planInfo(plan).name}
           </button>
         ) : step === 'device' ? (
           <button
@@ -281,6 +273,7 @@ function MedicineQuickAdd() {
   const [nickname, setNickname] = useState('');
   const [time, setTime] = useState('09:00');
   const [photo, setPhoto] = useState<string | undefined>();
+  const [camera, setCamera] = useState(false);
   const free = [1, 2, 3, 4, 5].find((n) => !s.medicines.some((m) => m.slot === n));
   return (
     <>
@@ -302,19 +295,9 @@ function MedicineQuickAdd() {
         <div className="card" style={{ marginTop: 14 }}>
           <div className="row" style={{ marginBottom: 12 }}>
             <PillPhoto med={{ name: name || 'New pill', photo, color: '#F7F4EC', shape: 'round' }} size={48} />
-            <label className="link-btn" style={{ cursor: 'pointer' }}>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                hidden
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (f) setPhoto(await readImage(f, 480));
-                }}
-              />
-              {photo ? 'Retake photo' : 'Photo of the pill'}
-            </label>
+            <button className="link-btn" onClick={() => setCamera(true)}>
+              {photo ? 'Retake photo' : 'Take a photo of the pill'}
+            </button>
           </div>
           <label className="field">
             <span>Medicine and strength</span>
@@ -344,6 +327,18 @@ function MedicineQuickAdd() {
             Add medicine
           </button>
         </div>
+      )}
+      {camera && (
+        <Camera
+          facing="environment"
+          maxSize={480}
+          title="Photo of the pill"
+          onClose={() => setCamera(false)}
+          onCapture={(p) => {
+            setPhoto(p);
+            setCamera(false);
+          }}
+        />
       )}
     </>
   );

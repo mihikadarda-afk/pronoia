@@ -248,7 +248,7 @@ export function StationScreen() {
       <div className="station">
         <Pebble mood="sleepy" size={120} />
         <p style={{ marginTop: 20, fontSize: 20, maxWidth: 360 }}>
-          {s.plan.tier === 'device' ? 'The dispenser does this job on the Device plan.' : 'The dose station is part of the Phone plan.'}
+          {s.plan.tier === 'device' ? 'The dispenser does this job on the Dispenser plan.' : 'The dose station is part of the Phone plan.'}
         </p>
         <button className="btn btn--secondary" onClick={() => nav('/')}>
           Back

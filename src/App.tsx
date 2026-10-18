@@ -5,11 +5,9 @@ import { SessionProvider, TEXT_ZOOM, useSession } from './lib/session';
 import { TabBar, ToastProvider, useToast } from './components/ui';
 import { Pebble, PebbleSays } from './components/Pebble';
 import { chime } from './lib/chime';
-import { LiveSignIn } from './pages/LiveSignIn';
-import { RefillerHome } from './pages/RefillerHome';
+import { Login, NewPassword } from './pages/Login';
 import { deviceService, isLocal } from './services/deviceService';
 import type { Role } from './services/types';
-import { SignIn } from './pages/SignIn';
 import { Join } from './pages/Join';
 import { StationScreen } from './pages/Station';
 import { Onboarding } from './pages/caregiver/Onboarding';
@@ -39,11 +37,14 @@ import { ParentWaiting } from './pages/parent/ParentWaiting';
 import { NeedHelp } from './pages/parent/NeedHelp';
 import { useAppState, useAuth, useMyId, useNow } from './services/useApp';
 
-/** The signed-in role: picked on this phone, or read from the circle when live. */
+/**
+ * The signed-in role. Caregivers log in with their account. On this-phone-only mode the parent's
+ * phone and the dose station are set on the phone itself when they join with the family code.
+ */
 function useRole(): Role | null {
   const session = useSession();
   const auth = useAuth();
-  if (isLocal) return session.role;
+  if (isLocal && (session.role === 'parent' || session.role === 'station')) return session.role;
   return auth.status === 'ready' || auth.status === 'pending' ? (auth.role ?? null) : null;
 }
 
@@ -71,9 +72,9 @@ function CaregiverLayout() {
   const auth = useAuth();
   const s = useAppState();
   const me = useMyId('caregiver');
-  if (!isLocal && auth.status === 'loading') return <Splash />;
+  if (auth.status === 'loading') return <Splash />;
   if (role !== 'caregiver') return <Navigate to="/" replace />;
-  if (!isLocal && auth.status === 'pending') {
+  if (auth.status === 'pending') {
     return (
       <main className="screen screen--plain" style={{ paddingTop: 80 }}>
         <PebbleSays mood="sleepy" size={48}>
@@ -165,16 +166,14 @@ function StationLayout() {
 function Home() {
   const role = useRole();
   const auth = useAuth();
-  if (!isLocal) {
-    if (auth.status === 'loading') return <Splash />;
-    if (auth.status === 'signed-out') return <LiveSignIn />;
-    if (auth.status === 'no-circle') return <Navigate to="/setup" replace />;
-  }
-  if (role === 'caregiver') return <Navigate to="/care" replace />;
+  if (auth.recovering) return <NewPassword />;
   if (role === 'parent') return <Navigate to="/parent" replace />;
   if (role === 'station') return <Navigate to="/station" replace />;
-  if (role === 'refiller') return <RefillerHome />;
-  return <SignIn />;
+  if (auth.status === 'loading') return <Splash />;
+  if (auth.status === 'signed-out') return <Login />;
+  if (auth.status === 'no-circle') return <Navigate to="/setup" replace />;
+  if (role === 'caregiver') return <Navigate to="/care" replace />;
+  return <Login />;
 }
 
 /** Text size for this phone: the whole app scales, like the browser's own zoom. */

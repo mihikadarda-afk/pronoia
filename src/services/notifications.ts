@@ -20,7 +20,7 @@ export interface EventInfo {
 export const EVENTS: EventInfo[] = [
   { id: 'help', short: 'I need help', group: 'Urgent', title: 'I need help pressed', hint: 'Your parent asked for help.', canWake: true, required: true },
   { id: 'missed', short: 'missed doses', group: 'Urgent', title: 'Missed dose', hint: 'Not taken after the reminder delay.', canWake: true },
-  { id: 'checkin', short: 'missed check-ins', group: 'Urgent', title: 'Missed check-in', hint: 'Only after the refiller was asked and hasn’t replied OK.', canWake: true },
+  { id: 'checkin', short: 'missed check-ins', group: 'Urgent', title: 'Missed check-in', hint: 'When there’s still no tap after the second chime.', canWake: true },
   { id: 'review', short: 'doses to review', group: 'Doses', title: 'Dose needs your review', hint: 'The AI check wasn’t sure the pill was swallowed.', canWake: false },
   { id: 'late', short: 'late doses', group: 'Doses', title: 'Dose taken late', hint: 'Taken, but well after its time.', canWake: false },
   { id: 'taken', short: 'every dose', group: 'Doses', title: 'Every dose taken', hint: 'With the time and the confidence score.', canWake: false },

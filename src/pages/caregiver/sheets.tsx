@@ -165,14 +165,14 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
 export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
   const s = useAppState();
   const toast = useToast();
-  const { parent, refiller, caregiver } = usePeople();
+  const { parent, caregiver } = usePeople();
   const [voice, setVoice] = useState(false);
   useEffect(() => setVoice(false), [id]);
   const c = id ? deviceService.checkIn(id) : undefined;
   if (!c) return <Sheet open={!!id} onClose={onClose} label="Check-in">{null}</Sheet>;
   const tz = parent.timeZone;
-  const st = checkInStatus(c, refiller?.name, tz);
-  const done = c.status === 'checked_in' || c.status === 'refiller_ok';
+  const st = checkInStatus(c, tz);
+  const done = c.status === 'checked_in';
   const escalates = hasPlan(s.plan.tier, 'phone');
 
   return (
@@ -184,7 +184,7 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
         <div className="row">
           <Pebble mood={done ? 'happy' : c.status === 'upcoming' || c.status === 'due' ? 'waving' : 'worried'} size={34} />
           <div className="grow">
-            <h2 style={{ fontSize: 18 }}>{checkInTitle(c, parent.name, refiller?.name, tz)}</h2>
+            <h2 style={{ fontSize: 18 }}>{checkInTitle(c, parent.name, tz)}</h2>
             <div className="small muted">
               {dayLabel(c.scheduledAt, c.dayOffset, tz)}, {hhmmLabel(c.time)} · {fmtTime(c.scheduledAt, caregiver.timeZone)} your time
             </div>
@@ -198,10 +198,9 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
       {c.status === 'upcoming' && (
         <p className="small">
           {parent.name}’s phone will chime softly and Pebble will wave: Just saying hi! Tap if you’re feeling okay.
-          {escalates && refiller ? ` If there’s no tap, ${refiller.name} is asked first, then you.` : ''}
+          {escalates ? ' If there’s no tap, you’re notified.' : ''}
         </p>
       )}
-      {c.record?.note && <p className="small">{refiller?.name ?? 'The refiller'} wrote: {c.record.note}</p>}
       <Events events={c.record?.events ?? []} start={c.scheduledAt} tz={tz} />
 
       {c.status === 'missed_notified' && (
@@ -232,7 +231,7 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
 
       {!escalates && (c.status === 'missed' || c.status === 'upcoming') && (
         <div style={{ marginTop: 14 }}>
-          <Locked plan="phone">Get {refiller?.name ?? 'the refiller'} and you alerted if {parent.name} misses a check-in.</Locked>
+          <Locked plan="phone">Get alerted if {parent.name} misses a check-in.</Locked>
         </div>
       )}
     </Sheet>

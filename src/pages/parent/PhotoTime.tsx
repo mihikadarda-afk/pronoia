@@ -1,35 +1,37 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PebbleSays } from '../../components/Pebble';
-import { readImage } from '../../components/ui';
+import { Camera } from '../../components/Camera';
 import { useT } from '../../lib/i18n';
 import { deviceService } from '../../services/deviceService';
 import { usePeople } from '../../services/useApp';
 
-/** Smile time on the parent's phone: one big button that opens the camera, then Send. */
+/** Smile time on the parent's phone: one big button that opens the camera in the app, then Send. */
 export function PhotoTime() {
   const t = useT();
   const nav = useNavigate();
   const { caregiver } = usePeople();
   const [photo, setPhoto] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [open, setOpen] = useState(false);
   const moment = deviceService.currentPhotoRequest();
 
   const camera = (label: string, className: string) => (
-    <label className={className} style={{ cursor: 'pointer' }}>
-      <input
-        type="file"
-        accept="image/*"
-        capture="user"
-        hidden
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (f) setPhoto(await readImage(f, 720));
-          e.target.value = '';
-        }}
-      />
+    <button className={className} onClick={() => setOpen(true)}>
       {label}
-    </label>
+    </button>
+  );
+  const cameraView = open && (
+    <Camera
+      big
+      facing="user"
+      title={t.takePhoto}
+      onClose={() => setOpen(false)}
+      onCapture={(p) => {
+        setPhoto(p);
+        setOpen(false);
+      }}
+    />
   );
 
   if (sent) {
@@ -63,6 +65,7 @@ export function PhotoTime() {
           </button>
           {camera(t.retake, 'p-btn p-btn--secondary p-btn--small')}
         </div>
+        {cameraView}
       </main>
     );
   }
@@ -80,6 +83,7 @@ export function PhotoTime() {
           {t.notNow}
         </button>
       </div>
+      {cameraView}
     </main>
   );
 }

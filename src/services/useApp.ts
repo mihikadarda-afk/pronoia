@@ -23,8 +23,7 @@ export function usePeople() {
   const s = useAppState();
   const caregiver = s.people.find((p) => p.id === s.caregiverId)!;
   const parent = s.people.find((p) => p.id === s.parentId)!;
-  const refiller = s.people.find((p) => p.role === 'refiller' && p.status === 'active');
-  return { caregiver, parent, refiller };
+  return { caregiver, parent };
 }
 
 export function useAuth() {
@@ -39,11 +38,9 @@ export function usePlan() {
 }
 
 /** Whose inbox this phone shows: the signed-in member when live, the chosen person on this phone. */
-export function useMyId(role: 'caregiver' | 'parent' | 'refiller'): string | undefined {
+export function useMyId(role: 'caregiver' | 'parent'): string | undefined {
   const s = useAppState();
   const auth = useAuth();
   if (deviceService.mode === 'live') return auth.memberId;
-  if (role === 'caregiver') return s.caregiverId;
-  if (role === 'parent') return s.parentId;
-  return s.people.find((p) => p.role === 'refiller' && p.status === 'active')?.id;
+  return role === 'caregiver' ? s.caregiverId : s.parentId;
 }

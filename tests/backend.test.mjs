@@ -74,15 +74,12 @@ test('a family circle works end to end', async (t) => {
     assert.deepEqual(people.map((p) => p.name), ['Mihika', 'Nanaji']);
   });
 
-  await t.test('a refill helper sees nothing but their own row', async () => {
+  await t.test('nobody can join as a refill helper', async () => {
     const newCode = await ok(mihika.rpc('regenerate_code', { p_circle: circleId }));
     const ravi = client();
     await ok(ravi.auth.signInAnonymously());
-    const id = await ok(ravi.rpc('join_with_code', { p_code: newCode, p_role: 'refiller', p_name: 'Ravi', p_whatsapp: '+91 99090 23314' }));
-    await ok(mihika.rpc('approve_member', { p_member: id }));
-    assert.equal((await ok(ravi.from('members').select('id'))).length, 1);
-    assert.equal((await ok(ravi.from('dose_records').select('id'))).length, 0);
-    assert.equal((await ok(ravi.from('medicines').select('slot'))).length, 0);
+    const { error } = await ravi.rpc('join_with_code', { p_code: newCode, p_role: 'refiller', p_name: 'Ravi' });
+    assert.match(error.message, /Unknown role/);
   });
 
   await t.test('strangers and parents cannot change medicines', async () => {
@@ -134,11 +131,10 @@ test('a family circle works end to end', async (t) => {
     assert.equal(after.events.at(-1).label, 'Mihika reviewed: looks good');
   });
 
-  await t.test('"I need help" reaches everyone', async () => {
+  await t.test('"I need help" reaches every caregiver', async () => {
     const told = await ok(nanaji.rpc('parent_help'));
-    assert.deepEqual([...told].sort(), ['Mihika', 'Ravi']);
+    assert.deepEqual([...told].sort(), ['Mihika']);
     const outbox = await ok(mihika.from('outbox').select('to_name, channel, text').eq('circle_id', circleId));
-    assert.ok(outbox.some((m) => m.to_name === 'Ravi' && m.text.includes('I need help')));
     assert.ok(outbox.some((m) => m.to_name === 'Mihika' && m.text.includes('I need help')));
     const call = outbox.find((m) => m.to_name === 'Mihika' && m.channel === 'call');
     assert.ok(call, 'help also places a call by default');

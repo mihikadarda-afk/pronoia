@@ -4,7 +4,7 @@ import { Pebble, PebbleSays } from '../components/Pebble';
 import { Avatar } from '../components/ui';
 import { LANGS, langName, useT } from '../lib/i18n';
 import { useSession } from '../lib/session';
-import { EmailCodeForm } from '../components/EmailCodeForm';
+import { PasswordForm } from '../components/PasswordForm';
 import { deviceService, isLocal, normalizeCode } from '../services/deviceService';
 import { useAuth } from '../services/useApp';
 import type { Person, Role } from '../services/types';
@@ -12,7 +12,7 @@ import { PrivacyPromise } from './parent/ParentPrivacy';
 
 type Step = 'role' | 'code' | 'confirm' | 'email' | 'privacy' | 'done';
 
-/** The code-linking flow: the parent's phone, the dose station, refillers and extra caregivers. */
+/** The code-linking flow: the parent's phone, the dose station and extra caregivers. */
 export function Join() {
   const t = useT();
   const session = useSession();
@@ -26,7 +26,7 @@ export function Join() {
   const [caregiver, setCaregiver] = useState<Person | null>(null);
   const [busy, setBusy] = useState(false);
   const auth = useAuth();
-  const needsName = role === 'refiller' || role === 'caregiver';
+  const needsName = role === 'caregiver';
 
   const check = async (value = code) => {
     setBusy(true);
@@ -115,9 +115,6 @@ export function Join() {
             <button className="p-btn p-btn--secondary p-btn--small" onClick={() => pick('station')}>
               {t.imStation}
             </button>
-            <button className="p-btn p-btn--secondary p-btn--small" onClick={() => pick('refiller')}>
-              {t.imRefiller}
-            </button>
             <button className="p-link" onClick={() => pick('caregiver')}>
               {t.imFamily}
             </button>
@@ -153,7 +150,7 @@ export function Join() {
           {needsName && (
             <label className="field" style={{ fontSize: 16 }}>
               <span>Your name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ravi" />
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Anika" />
             </label>
           )}
           {error && <p className="error-text" style={{ fontSize: 18 }}>{error}</p>}
@@ -187,9 +184,9 @@ export function Join() {
       {step === 'email' && caregiver && (
         <div className="stack" style={{ fontSize: 16 }}>
           <PebbleSays mood="happy" size={56}>
-            Caregivers sign in with email, so you can get alerts and review doses.
+            Caregivers have an account, so you can get alerts and review doses.
           </PebbleSays>
-          <EmailCodeForm cta="Send me a code" onDone={() => setStep('confirm')} />
+          <PasswordForm initial="signup" onDone={() => setStep('confirm')} />
         </div>
       )}
 
@@ -209,9 +206,7 @@ export function Join() {
               {t.waiting(caregiver.name)}
             </PebbleSays>
             <p style={{ fontSize: 18 }}>
-              {role === 'refiller'
-                ? `Once ${caregiver.name} approves, refill reminders and check-in requests come to you as notifications in Pronoia.`
-                : `Once ${caregiver.name} approves, you’ll see every dose and check-in too.`}
+              Once {caregiver.name} approves, you’ll see every dose and check-in too.
             </p>
           </div>
           <button className="p-btn" onClick={() => nav('/')}>

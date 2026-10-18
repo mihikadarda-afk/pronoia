@@ -394,3 +394,29 @@ li.attention--blush { background: var(--tint-blush); }
 .gallery-item img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; display: block; border: 1px solid var(--line); }
 .gallery-cap { display: block; font-size: 11px; color: var(--ink-soft); margin-top: 3px; }
 .gallery-new { font-style: normal; color: var(--blush-ink); font-weight: 600; margin-left: 4px; }
+
+/* In-app camera */
+.camera { position: fixed; inset: 0; z-index: 60; background: #141a16; color: #f4efe3; display: flex; flex-direction: column; }
+.camera-top { display: flex; align-items: center; justify-content: space-between; padding: 12px var(--gutter); padding-top: max(12px, env(safe-area-inset-top)); }
+.camera-title { font-weight: 600; font-size: 16px; }
+.camera-close, .camera-flip { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.12); color: inherit; display: grid; place-items: center; cursor: pointer; }
+.camera-flip { width: 56px; height: 56px; }
+.camera-flip:disabled { opacity: 0.3; }
+.camera-view { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.camera-view video, .camera-view img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.camera-error { padding: 24px; text-align: center; max-width: 340px; }
+.camera-error p { margin: 0 0 16px; line-height: 1.5; }
+.camera-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 28px; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.camera-shutter { width: 76px; height: 76px; border-radius: 50%; border: 5px solid #f4efe3; background: #f4efe3; box-shadow: inset 0 0 0 3px #141a16; cursor: pointer; }
+.camera-shutter:active { transform: scale(0.94); }
+.camera-shutter:disabled { opacity: 0.4; }
+.camera-text-btn { border: 0; background: none; color: inherit; font: inherit; font-size: 17px; padding: 12px; cursor: pointer; }
+.camera-use { flex: 1; max-width: 220px; }
+.camera--big .camera-title { font-size: 20px; }
+.camera--big .camera-shutter { width: 96px; height: 96px; }
+.camera--big .camera-text-btn { font-size: 22px; }
+.camera--big .camera-use { font-size: 20px; min-height: 60px; }
+
+.password-field { position: relative; display: block; }
+.password-field .input { padding-right: 64px; }
+.password-field button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }

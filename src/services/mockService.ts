@@ -19,7 +19,7 @@ import type {
   Role,
   StationStatus,
 } from './types';
-import { PARENT_TZ, seedState } from './mockData';
+import { STATE_VERSION, emptyState } from './defaults';
 import { presetEvents, type Preset } from './notifications';
 import {
   BaseService,
@@ -29,11 +29,47 @@ import {
   normalizeCode,
   type AuthState,
   type DeviceService,
+  type NewCircle,
 } from './service';
 import { hhmmLabel, instantFor, wallTime, zonedDate } from '../lib/time';
 
-const STORAGE_KEY = 'pronoia.local.v1';
+const STORAGE_KEY = 'pronoia.local.v2';
+/** Accounts made on this phone: email -> salted password hash. */
+const ACCOUNTS_KEY = 'pronoia.accounts.v1';
+/** Who is logged in on this phone, and whose family the parent and station screens show. */
+const LOGIN_KEY = 'pronoia.login.v1';
+const FAMILY_KEY = 'pronoia.family.v1';
 const MIN = 60_000;
+
+const read = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const write = (key: string, value: string | null) => {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+};
+
+async function hashPassword(salt: string, password: string): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}:${password}`));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+type Accounts = Record<string, { salt: string; hash: string }>;
+const accounts = (): Accounts => {
+  try {
+    return JSON.parse(read(ACCOUNTS_KEY) ?? '{}') as Accounts;
+  } catch {
+    return {};
+  }
+};
 
 interface Saved {
   state: AppState;
@@ -56,29 +92,59 @@ const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00
 /** Doses and check-ins are kept by day relative to today; older than two weeks are dropped. */
 const KEEP_DAYS = 14;
 
-/** The family when there's no Supabase: everything stays in this browser. The clock moves doses and check-ins along. */
+/** The family when there's no Supabase: accounts and data stay in this browser. The clock moves doses and check-ins along. */
 export class MockDeviceService extends BaseService implements DeviceService {
   readonly mode = 'local' as const;
   private state: AppState;
   private listeners = new Set<() => void>();
   private day: string;
 
+  /** The logged-in caregiver's email. */
+  private account: string | null;
+  /** Whose family is on this phone (stays after logging out, for the parent and station screens). */
+  private family: string | null;
+  private authState: AuthState = { status: 'signed-out' };
+
   constructor() {
     super();
+    this.account = read(LOGIN_KEY);
+    this.family = this.account ?? read(FAMILY_KEY);
+    this.state = emptyState();
+    this.day = dayKey(this.now(), this.parentTz());
+    this.load();
+    window.setInterval(() => this.tick(), 15_000);
+  }
+
+  private load() {
     let saved: Saved | null = null;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = this.family ? read(`${STORAGE_KEY}:${this.family}`) : null;
       saved = raw ? (JSON.parse(raw) as Saved) : null;
-      if (saved?.state?.version !== 3) saved = null;
+      if (saved?.state?.version !== STATE_VERSION) saved = null;
     } catch {
       saved = null;
     }
-    this.state = saved?.state ?? seedState(this.now());
+    this.state = saved?.state ?? emptyState();
     this.day = saved?.day ?? dayKey(this.now(), this.parentTz());
     this.rollDays();
-    if (!saved) this.set({}); // save the new family right away
     this.tick();
-    window.setInterval(() => this.tick(), 15_000);
+    this.updateAuth();
+    this.listeners.forEach((fn) => fn());
+  }
+
+  /** A family exists once the circle is created (it gets a join code). */
+  private hasFamily() {
+    return !!this.state.code.code;
+  }
+
+  private updateAuth() {
+    const next: AuthState = !this.account
+      ? { status: 'signed-out' }
+      : !this.hasFamily()
+        ? { status: 'no-circle', email: this.account }
+        : { status: 'ready', role: 'caregiver', email: this.account, memberId: this.state.caregiverId };
+    const a = this.authState;
+    if (a.status !== next.status || a.email !== next.email || a.memberId !== next.memberId) this.authState = next;
   }
 
   now(): Date {
@@ -114,15 +180,74 @@ export class MockDeviceService extends BaseService implements DeviceService {
     return () => this.listeners.delete(fn);
   }
 
-  // No accounts on this phone: the person picks who they are on the front page.
-  private readonly authState: AuthState = { status: 'ready' };
+  // Accounts live on this phone only: the password is kept as a salted hash.
   auth(): AuthState {
     return this.authState;
   }
-  async sendEmailCode() {}
-  async verifyEmailCode() {}
-  async signOut() {}
-  async createCircle() {}
+
+  private logIn(email: string) {
+    this.account = email;
+    this.family = email;
+    write(LOGIN_KEY, email);
+    write(FAMILY_KEY, email);
+    this.load();
+  }
+
+  async signUp(email: string, password: string) {
+    const key = email.trim().toLowerCase();
+    if (password.length < 8) throw new Error('Use at least 8 characters for your password.');
+    const all = accounts();
+    if (all[key]) throw new Error('There’s already an account with this email. Log in instead.');
+    const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    all[key] = { salt, hash: await hashPassword(salt, password) };
+    write(ACCOUNTS_KEY, JSON.stringify(all));
+    this.logIn(key);
+    return { needsConfirm: false };
+  }
+
+  async signIn(email: string, password: string) {
+    const key = email.trim().toLowerCase();
+    const acct = accounts()[key];
+    if (!acct || (await hashPassword(acct.salt, password)) !== acct.hash) {
+      throw new Error('That email and password don’t match. Try again, or create an account.');
+    }
+    this.logIn(key);
+  }
+
+  async resetPassword() {
+    throw new Error('Accounts on this phone can’t be reset by email. Connect Supabase to get password reset emails.');
+  }
+
+  async setNewPassword() {}
+
+  async signOut() {
+    this.account = null;
+    write(LOGIN_KEY, null);
+    this.updateAuth();
+    this.listeners.forEach((fn) => fn());
+  }
+
+  async createCircle(input: NewCircle) {
+    const t = this.t();
+    const base = emptyState();
+    const caregiverId = `p-${Math.random().toString(36).slice(2, 8)}`;
+    const parentId = `p-${Math.random().toString(36).slice(2, 8)}`;
+    this.state = {
+      ...base,
+      circleName: input.circleName,
+      startedAt: t,
+      caregiverId,
+      parentId,
+      people: [
+        { id: caregiverId, role: 'caregiver', status: 'active', isOwner: true, appAccess: true, joinedAt: t, ...input.caregiver },
+        { id: parentId, role: 'parent', status: 'invited', appAccess: true, ...input.parent },
+      ],
+      code: { code: randomCode(), createdAt: t, expiresAt: t + 24 * 3600_000, used: false },
+      plan: { tier: 'free', billing: 'monthly', since: t },
+    };
+    this.day = dayKey(this.now(), this.parentTz());
+    this.set({});
+  }
   onError(): () => void {
     return () => {};
   }
@@ -134,11 +259,8 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   private set(next: Partial<AppState>) {
     this.state = { ...this.state, ...next, updatedAt: this.t() };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: this.state, day: this.day } satisfies Saved));
-    } catch {
-      /* storage unavailable: keep working in memory */
-    }
+    if (this.family && this.hasFamily()) write(`${STORAGE_KEY}:${this.family}`, JSON.stringify({ state: this.state, day: this.day } satisfies Saved));
+    this.updateAuth();
     this.listeners.forEach((fn) => fn());
   }
 
@@ -148,10 +270,6 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   private caregiverName() {
     return this.person(this.state.caregiverId)?.name ?? 'Caregiver';
-  }
-
-  private refiller() {
-    return this.state.people.find((p) => p.role === 'refiller' && p.status === 'active');
   }
 
   private minutesSince(day: number, time: string): number {
@@ -167,6 +285,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   /** Moves everything that time decides: reminders, not-marked and missed doses, check-in escalation. */
   private tick() {
+    if (!this.hasFamily()) return;
     this.rollDays();
     const s = this.state;
     const plan = s.plan.tier;
@@ -240,7 +359,6 @@ export class MockDeviceService extends BaseService implements DeviceService {
     });
 
     const settings = s.checkInSettings;
-    const refiller = this.refiller();
     for (const c of this.checkInsForDay(0)) {
       const after = this.minutesSince(0, c.time);
       const rec = checkIns.find((r) => r.id === c.id);
@@ -266,20 +384,12 @@ export class MockDeviceService extends BaseService implements DeviceService {
         put({ id: c.id, dayOffset: 0, time: c.time, status: 'due', events: [...events, { label: 'Chimed again, louder', minute: settings.repeatMin }] });
       }
       const cur = (): CheckInRecord => checkIns.find((r) => r.id === c.id) ?? { id: c.id, dayOffset: 0, time: c.time, status: 'due', events };
-      if (after >= settings.refillerMin && refiller && !has(`Notified ${refiller.name}`)) {
-        put({ ...cur(), status: 'missed_notified', events: [...cur().events, { label: `Notified ${refiller.name}`, minute: settings.refillerMin }] });
-        send(refiller.id, `${parent} hasn't checked in since ${hhmmLabel(c.time)}. Can you check on them? Tap Reply OK when you have.`, {
-          kind: 'checkin',
-          ref: c.id,
-          wake: true,
-        });
-      }
       if (after >= settings.caregiverMin && !has('Notified caregivers')) {
         const r = cur();
         put({ ...r, status: 'missed_notified', events: [...r.events, { label: 'Notified caregivers', minute: settings.caregiverMin }] });
         // This one ignores quiet hours.
         for (const id of this.caregiversFor('help')) {
-          send(id, `${parent} hasn't checked in since ${hhmmLabel(c.time)}${refiller ? ` and ${refiller.name} hasn't replied yet` : ''}. Please call.`, {
+          send(id, `${parent} hasn't checked in since ${hhmmLabel(c.time)}. Please call.`, {
             kind: 'checkin',
             ref: c.id,
             wake: true,
@@ -521,19 +631,19 @@ export class MockDeviceService extends BaseService implements DeviceService {
         ...people,
         {
           id: personId,
-          name: name || (role === 'refiller' ? 'Refill helper' : 'Family member'),
+          name: name || 'Family member',
           role,
-          relation: role === 'refiller' ? 'Refill helper' : 'Family',
+          relation: 'Family',
           whatsapp: '',
           city: '',
-          timeZone: role === 'caregiver' ? (this.person(this.state.caregiverId)?.timeZone ?? PARENT_TZ) : PARENT_TZ,
+          timeZone: this.person(this.state.caregiverId)?.timeZone ?? this.parentTz(),
           status: 'pending',
-          appAccess: role !== 'refiller',
+          appAccess: true,
         },
       ];
     }
     const who = role === 'station' ? 'The dose station' : people.find((p) => p.id === personId)!.name;
-    const roleText = role === 'station' ? '' : role === 'parent' ? '' : role === 'refiller' ? ' to help with refills' : ' as a caregiver';
+    const roleText = role === 'caregiver' ? ' as a caregiver' : '';
     this.set({
       ...next,
       people,
@@ -570,23 +680,11 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   // ---- refills ----
 
-  remindRefiller() {
-    const refiller = this.refiller();
-    if (!refiller) return;
-    const device = this.state.plan.tier === 'device';
-    const low = this.state.medicines.filter((m) => this.slotHealth(m) !== 'ok');
-    const list = low.length ? low.map((m) => (device ? `slot ${m.slot} (${m.name})` : m.name)).join(', ') : 'all medicines';
-    this.notify(refiller.id, `Hi ${refiller.name}, Pebble here 💚 ${this.parentName()}'s ${device ? 'dispenser' : 'pill box'} needs a refill soon: ${list}. Thank you!`, {
-      kind: 'refill',
-    });
-  }
-
   logRefill(slots: number[]) {
     const t = this.t();
-    const refiller = this.refiller()?.name ?? 'Family';
     this.set({
       medicines: this.state.medicines.map((m) => (slots.includes(m.slot) ? { ...m, pillsLeft: m.capacity, stuck: false } : m)),
-      refillLog: [{ id: `r${t}`, at: t, by: refiller, slots }, ...this.state.refillLog],
+      refillLog: [{ id: `r${t}`, at: t, by: this.caregiverName(), slots }, ...this.state.refillLog],
     });
   }
 
@@ -616,23 +714,6 @@ export class MockDeviceService extends BaseService implements DeviceService {
     const mine = new Set(this.inbox(personId).filter((m) => !m.read).map((m) => m.id));
     if (!mine.size) return;
     this.set({ outbox: this.state.outbox.map((m) => (mine.has(m.id) ? { ...m, read: true } : m)) });
-  }
-
-  replyOk(checkInId: string, note?: string) {
-    const rec = this.state.checkIns.find((r) => r.id === checkInId);
-    const refiller = this.refiller();
-    if (!rec || !refiller || (rec.status !== 'missed_notified' && rec.status !== 'due')) return;
-    const minute = this.minutesSince(rec.dayOffset, rec.time);
-    const text = note?.trim();
-    this.set({
-      checkIns: this.state.checkIns.map((r) =>
-        r.id === checkInId
-          ? { ...r, status: 'refiller_ok', note: text || undefined, events: [...r.events, { label: `${refiller.name} replied OK${text ? `: ${text}` : ''}`, minute }] }
-          : r,
-      ),
-      outbox: [...this.toCaregivers('checkin', `${refiller.name} checked on ${this.parentName()}: okay${text ? `. ${text}` : '.'}`, { kind: 'checkin', ref: checkInId }), ...this.state.outbox].slice(0, 80),
-      notices: this.notice('checkin', `${refiller.name} checked on ${this.parentName()}: okay.`),
-    });
   }
 
   nudgeParent(text: string) {
@@ -688,7 +769,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   async parentHelp(): Promise<string[]> {
     const name = this.parentName();
-    const helpers = this.state.people.filter((p) => p.status === 'active' && (p.role === 'caregiver' || p.role === 'refiller'));
+    const helpers = this.state.people.filter((p) => p.status === 'active' && p.role === 'caregiver');
     const t = this.t();
     const time = wallTime(this.now(), this.parentTz());
     const helpText = `🆘 ${name} pressed I need help at ${hhmmLabel(time)}. Call ${this.person(this.state.parentId)?.whatsapp ?? ''}.`;

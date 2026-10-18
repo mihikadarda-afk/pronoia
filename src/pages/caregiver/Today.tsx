@@ -11,7 +11,10 @@ import type { AppState, Person } from '../../services/types';
 import { CheckInSheet, DoseSheet } from './sheets';
 
 /** Pebble's mood and one line for the top of Today. */
-function pebbleLine(items: TimelineItem[], s: AppState, parent: Person, refiller?: Person): { mood: PebbleMood; text: string } {
+/** The earliest dose time of the day, if there are any medicines. */
+const firstDoseTime = (s: AppState) => s.medicines.flatMap((m) => m.times).sort()[0];
+
+function pebbleLine(items: TimelineItem[], s: AppState, parent: Person): { mood: PebbleMood; text: string } {
   const name = parent.name;
   const doses = items.flatMap((i) => (i.kind === 'dose' ? [i.dose] : []));
   const checks = items.flatMap((i) => (i.kind === 'checkin' ? [i.checkIn] : []));
@@ -19,7 +22,7 @@ function pebbleLine(items: TimelineItem[], s: AppState, parent: Person, refiller
   if (help) return { mood: 'worried', text: `${name} pressed I need help at ${fmtTime(new Date(help.record!.at!), parent.timeZone)}. Please call.` };
   const missedCheck = checks.find((c) => c.status === 'missed_notified');
   if (missedCheck) {
-    return { mood: 'worried', text: `${name} hasn’t checked in since ${hhmmLabel(missedCheck.time)}. I’ve asked ${refiller?.name ?? 'the refiller'} to look in.` };
+    return { mood: 'worried', text: `${name} hasn’t checked in since ${hhmmLabel(missedCheck.time)}. Give them a call.` };
   }
   const missed = doses.find((d) => d.status === 'missed');
   if (missed) return { mood: 'worried', text: `${name} hasn’t taken the ${hhmmLabel(missed.time)} ${pillName(missed.medicine.purpose)}. A gentle call might help.` };
@@ -36,7 +39,10 @@ function pebbleLine(items: TimelineItem[], s: AppState, parent: Person, refiller
     return { mood: allDay ? 'celebrating' : 'happy', text: allDay ? `All done today. ${name} took every pill.` : `All good today. ${name} took the ${part}.` };
   }
   if (!done.length && doses.length) return { mood: 'waving', text: `The first pill is at ${hhmmLabel(doses[0].time)}.` };
-  if (!doses.length) return { mood: 'waving', text: 'Add a medicine and I’ll start keeping track.' };
+  if (!doses.length) {
+    const first = firstDoseTime(s);
+    return { mood: 'waving', text: first ? `Nothing left for today. The first pill tomorrow is at ${hhmmLabel(first)}.` : 'Add a medicine and I’ll start keeping track.' };
+  }
   return { mood: 'happy', text: `Mostly good today.` };
 }
 
@@ -44,7 +50,7 @@ export function Today() {
   const s = useAppState();
   const now = useNow(30_000);
   const toast = useToast();
-  const { caregiver, parent, refiller } = usePeople();
+  const { caregiver, parent } = usePeople();
   const [doseId, setDoseId] = useState<string | null>(null);
   const [checkId, setCheckId] = useState<string | null>(null);
   const refresh = useCallback(() => deviceService.refresh(), []);
@@ -54,7 +60,7 @@ export function Today() {
   const doses = items.flatMap((i) => (i.kind === 'dose' ? [i.dose] : []));
   const taken = doses.filter((d) => isDoneDose(d.status)).length;
   const last = deviceService.lastCheckIn();
-  const line = pebbleLine(items, s, parent, refiller);
+  const line = pebbleLine(items, s, parent);
   const pending = s.people.filter((p) => p.status === 'pending');
   const helpNotices = s.notices.filter((n) => n.kind === 'help' && !n.read);
   const plan = s.plan.tier;
@@ -93,7 +99,7 @@ export function Today() {
       {helpNotices.map((n) => (
         <section key={n.id} className="alert-banner" role="alert" style={{ marginBottom: 12 }}>
           <strong>{n.text}</strong>
-          {parent.whatsapp && <span className="block small">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a>{refiller ? `. ${refiller.name} was told too.` : ''}</span>}
+          {parent.whatsapp && <span className="block small">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></span>}
           <button className="btn btn--small" style={{ marginTop: 10 }} onClick={() => deviceService.acknowledgeNotice(n.id)}>
             I’m on it
           </button>
@@ -152,8 +158,14 @@ export function Today() {
       </div>
       {items.length === 0 ? (
         <div style={{ padding: '24px 0' }}>
-          <Says mood="waving">No medicines or check-ins yet. Add a medicine and I’ll start keeping track.</Says>
-          <Link to="/care/meds" className="btn btn--block" style={{ marginTop: 14 }}>Add a medicine</Link>
+          {firstDoseTime(s) ? (
+            <Says mood="sleepy">Nothing left for today. I’ll start keeping track at {hhmmLabel(firstDoseTime(s))} tomorrow.</Says>
+          ) : (
+            <>
+              <Says mood="waving">No medicines or check-ins yet. Add a medicine and I’ll start keeping track.</Says>
+              <Link to="/care/meds" className="btn btn--block" style={{ marginTop: 14 }}>Add a medicine</Link>
+            </>
+          )}
         </div>
       ) : (
         <ul className="list">
@@ -217,7 +229,7 @@ export function Today() {
               );
             }
             const c = i.checkIn;
-            const st = checkInStatus(c, refiller?.name, parent.timeZone);
+            const st = checkInStatus(c, parent.timeZone);
             const sub = checkInSub(c);
             const canReply = c.status === 'checked_in' && !c.record?.reply;
             return (
@@ -225,10 +237,10 @@ export function Today() {
                 <button className="lrow" onClick={() => setCheckId(c.id)} style={canReply ? { paddingBottom: 4 } : undefined}>
                   <TimeCol date={c.scheduledAt} parentTz={parent.timeZone} caregiverTz={caregiver.timeZone} />
                   <span style={{ display: 'grid', placeItems: 'center', width: 40 }} aria-hidden>
-                    <Pebble mood={c.status === 'checked_in' || c.status === 'refiller_ok' ? 'happy' : c.status === 'upcoming' || c.status === 'due' || c.status === 'paused' ? 'sleepy' : 'worried'} size={24} label="" />
+                    <Pebble mood={c.status === 'checked_in' ? 'happy' : c.status === 'upcoming' || c.status === 'due' || c.status === 'paused' ? 'sleepy' : 'worried'} size={24} label="" />
                   </span>
                   <span className="grow">
-                    <span className="lrow-title block">{checkInTitle(c, parent.name, refiller?.name, parent.timeZone)}</span>
+                    <span className="lrow-title block">{checkInTitle(c, parent.name, parent.timeZone)}</span>
                     {sub && <span className="lrow-sub block">{sub}</span>}
                   </span>
                   <span className="lrow-end">
@@ -260,7 +272,7 @@ export function Today() {
       {!hasPlan(plan, 'phone') && (
         <div style={{ marginTop: 16 }}>
           <Locked plan="phone">
-            Get {refiller?.name ?? 'a nearby relative'} and you alerted if {parent.name} misses a check-in, and see each pill taken on camera.
+            Get alerted if {parent.name} misses a check-in, and see each pill taken on camera.
           </Locked>
         </div>
       )}
@@ -275,7 +287,7 @@ export function Today() {
                     ? `Running low on ${lowMeds.map((m) => m.name).join(' and ')}`
                     : `Monthly refill due ${fmtDate(deviceService.refillInfo(lowMeds[0]).refillBy, parent.timeZone)}`}
                 </span>
-                <span className="lrow-sub block">{refiller ? `${refiller.name} handles refills.` : 'Invite someone nearby to help with refills.'}</span>
+                <span className="lrow-sub block">Log it when the pills are topped up.</span>
               </span>
               <span className="link-btn small">Refills</span>
             </Link>
