@@ -18,7 +18,7 @@ import type {
   Role,
   StationStatus,
 } from './types';
-import { DEMO_START, PARENT_TZ, seedHistory, seedState } from './mockData';
+import { PARENT_TZ, seedState } from './mockData';
 import { presetEvents, type Preset } from './notifications';
 import {
   BaseService,
@@ -27,32 +27,17 @@ import {
   doseAlertText,
   normalizeCode,
   type AuthState,
-  type DemoControls,
   type DeviceService,
 } from './service';
-import { hhmmLabel, instantFor, wallTime } from '../lib/time';
+import { hhmmLabel, instantFor, wallTime, zonedDate } from '../lib/time';
 
-const STORAGE_KEY = 'pronoia.demo.v2';
+const STORAGE_KEY = 'pronoia.local.v1';
 const MIN = 60_000;
-/** Saved demo data older than this is replaced, so the week always ends today. */
-const STALE_MS = 10 * 3600_000;
 
 interface Saved {
   state: AppState;
-  clockOffset: number;
-  savedAt: number;
-}
-
-function load(): Saved | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as Saved;
-    if (saved.state?.version !== 2 || Date.now() - saved.savedAt > STALE_MS) return null;
-    return saved;
-  } catch {
-    return null;
-  }
+  /** The parent's calendar day when this was saved, so records can be moved along to today. */
+  day: string;
 }
 
 function randomCode(): string {
@@ -62,48 +47,61 @@ function randomCode(): string {
   return `PEB-${s}`;
 }
 
-const startOffset = () => {
-  const real = new Date();
-  return instantFor(real, PARENT_TZ, 0, DEMO_START).getTime() - real.getTime();
+const dayKey = (date: Date, tz: string) => {
+  const { y, m, d } = zonedDate(date, tz);
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 };
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+/** Doses and check-ins are kept by day relative to today; older than two weeks are dropped. */
+const KEEP_DAYS = 14;
 
-/** The demo family, kept in this browser. A clock moves doses and check-ins along as time passes. */
+/** The family when there's no Supabase: everything stays in this browser. The clock moves doses and check-ins along. */
 export class MockDeviceService extends BaseService implements DeviceService {
-  readonly mode = 'demo' as const;
+  readonly mode = 'local' as const;
   private state: AppState;
   private listeners = new Set<() => void>();
-  private clockOffset: number;
-  readonly demo: DemoControls;
+  private day: string;
 
   constructor() {
     super();
-    const saved = load();
-    this.clockOffset = saved?.clockOffset ?? startOffset();
+    let saved: Saved | null = null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      saved = raw ? (JSON.parse(raw) as Saved) : null;
+      if (saved?.state?.version !== 2) saved = null;
+    } catch {
+      saved = null;
+    }
     this.state = saved?.state ?? seedState(this.now());
+    this.day = saved?.day ?? dayKey(this.now(), this.parentTz());
+    this.rollDays();
+    if (!saved) this.set({}); // save the new family right away
     this.tick();
     window.setInterval(() => this.tick(), 15_000);
-    this.demo = {
-      advance: (m) => this.advance(m),
-      jumpToNext: (k) => this.jumpToNext(k),
-      setStationOnline: (online) =>
-        this.set({ station: { ...this.state.station, online, lastSeen: online ? this.t() : this.state.station.lastSeen } }),
-      setDeviceOnline: (online) =>
-        this.set({ device: { ...this.state.device, online, lastSync: online ? this.t() : this.state.device.lastSync } }),
-      refillerRepliesOk: (id) => this.refillerRepliesOk(id),
-      reset: () => {
-        this.clockOffset = startOffset();
-        this.state = seedState(this.now());
-        this.set({});
-      },
-    };
   }
 
   now(): Date {
-    return new Date(Date.now() + this.clockOffset);
+    return new Date();
   }
 
   private t() {
-    return Date.now() + this.clockOffset;
+    return Date.now();
+  }
+
+  /** A new day in the parent's time zone: yesterday's "today" becomes -1, and so on. */
+  private rollDays() {
+    const today = dayKey(this.now(), this.parentTz());
+    const shift = daysBetween(this.day, today);
+    this.day = today;
+    if (shift <= 0) return;
+    const move = <T extends { id: string; dayOffset: number }>(r: T): T => {
+      const dayOffset = r.dayOffset - shift;
+      return { ...r, dayOffset, id: `${dayOffset}:${r.id.slice(r.id.indexOf(':') + 1)}` };
+    };
+    this.set({
+      records: this.state.records.map(move).filter((r) => r.dayOffset > -KEEP_DAYS),
+      checkIns: this.state.checkIns.map(move).filter((r) => r.dayOffset > -KEEP_DAYS),
+    });
   }
 
   getState(): AppState {
@@ -115,7 +113,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
     return () => this.listeners.delete(fn);
   }
 
-  // Demo accounts: always signed in; the role comes from the demo switcher.
+  // No accounts on this phone: the person picks who they are on the front page.
   private readonly authState: AuthState = { status: 'ready' };
   auth(): AuthState {
     return this.authState;
@@ -136,7 +134,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
   private set(next: Partial<AppState>) {
     this.state = { ...this.state, ...next, updatedAt: this.t() };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: this.state, clockOffset: this.clockOffset, savedAt: Date.now() }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: this.state, day: this.day } satisfies Saved));
     } catch {
       /* storage unavailable: keep working in memory */
     }
@@ -168,6 +166,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
 
   /** Moves everything that time decides: reminders, not-marked and missed doses, check-in escalation. */
   private tick() {
+    this.rollDays();
     const s = this.state;
     const plan = s.plan.tier;
     const parent = this.parentName();
@@ -285,53 +284,11 @@ export class MockDeviceService extends BaseService implements DeviceService {
     if (changed) this.set({ records, checkIns, outbox, notices, pause });
   }
 
-  private advance(minutes: number) {
-    this.clockOffset += minutes * MIN;
-    this.tick();
-    this.set({});
-  }
-
-  private jumpToNext(kind: 'dose' | 'checkin'): string | null {
-    const now = this.t();
-    const next =
-      kind === 'dose'
-        ? this.dosesForDay(0).find((d) => d.status === 'upcoming')
-        : this.checkInsForDay(0).find((c) => c.status === 'upcoming');
-    if (!next) return null;
-    this.clockOffset += next.scheduledAt.getTime() - now + 15_000;
-    this.tick();
-    this.set({});
-    return next.id;
-  }
-
-  private refillerRepliesOk(id: string) {
-    const rec = this.state.checkIns.find((r) => r.id === id);
-    const refiller = this.refiller();
-    if (!rec || !refiller) return;
-    const minute = this.minutesSince(rec.dayOffset, rec.time);
-    this.set({
-      checkIns: this.state.checkIns.map((r) =>
-        r.id === id
-          ? { ...r, status: 'refiller_ok', note: 'All fine', events: [...r.events, { label: `${refiller.name} replied OK`, minute }] }
-          : r,
-      ),
-      notices: this.notice('checkin', `${refiller.name} checked on ${this.parentName()}: okay.`),
-    });
-  }
-
   // ---- plans ----
 
   setPlan(tier: Plan, billing: Billing = this.state.plan.billing) {
     const s = this.state;
-    // The demo rebuilds its history so the log matches what the plan can see.
-    const { records, checkIns } = seedHistory(this.now(), tier, s.medicines, s.checkInSettings);
-    this.set({
-      plan: { ...s.plan, tier, billing },
-      records,
-      checkIns,
-      device: { ...s.device, paired: tier === 'device' ? true : s.device.paired },
-      station: { ...s.station, linked: tier !== 'free' },
-    });
+    this.set({ plan: { ...s.plan, tier, billing, since: tier === s.plan.tier ? s.plan.since : this.t() } });
   }
 
   // ---- doses ----
@@ -387,12 +344,21 @@ export class MockDeviceService extends BaseService implements DeviceService {
       time: d.time,
       status,
       confidence: result.confidence,
-      events: [...start, { label: `Camera checked 3 frames${result.sample ? ' (sample)' : ''}`, minute: after }, { label: verdict, minute: after }],
+      events: [
+        ...start,
+        { label: frames[0]?.startsWith('data:video/') ? 'Camera recorded a 12-second video' : `Camera took ${frames.length} photos`, minute: after },
+        { label: verdict, minute: after },
+      ],
       frames: { state: 'awaiting', images: frames, sample: result.sample, capturedAt: t, note: result.reason },
     };
     const parent = this.parentName();
     const caregiver = this.caregiverName();
-    const next: Partial<AppState> = { records: [...this.state.records.filter((r) => r.id !== id), rec] };
+    // Videos are big for browser storage: keep only the two newest waiting for review.
+    let kept = 0;
+    const older = [...this.state.records.filter((r) => r.id !== id)]
+      .sort((a, b) => (b.frames?.capturedAt ?? 0) - (a.frames?.capturedAt ?? 0))
+      .map((r) => (r.frames?.images.length && ++kept >= 2 ? { ...r, frames: { ...r.frames, state: 'deleted' as const, images: [] } } : r));
+    const next: Partial<AppState> = { records: [...older, rec] };
     if (status !== 'due') {
       next.outbox = [
         { id: `m${t}`, at: t, channel: 'whatsapp' as const, to: caregiver, text: doseAlertText(parent, d.time, status, result.confidence, wallTime(this.now(), this.parentTz())) },

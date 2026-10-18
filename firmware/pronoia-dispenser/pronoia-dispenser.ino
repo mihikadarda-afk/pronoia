@@ -5,8 +5,8 @@
 //     parent's local time. The clock keeps running offline from the last sync.
 //   - At each dose time: drop the pill, report "dispensed", then watch the cup's
 //     weight. Beep and light up if it isn't lifted after the reminder delay.
-//   - When the pill is lifted: report "picked_up", record a short clip, report the
-//     swallow check's confidence.
+//   - When the pill is lifted: report "picked_up", film the dose and upload the clip to
+//     the Pronoia server (api/device-clip), which runs the AI check.
 //   - Events that can't be sent (WiFi down) wait in a queue and go out later.
 //
 // Hardware hooks are marked HARDWARE: fill them in for your motor, load cell,
@@ -52,11 +52,15 @@ void hwReminder(bool on) {
   Serial.printf("[hw] reminder %s\n", on ? "on" : "off");
 }
 
-// Record a short clip after the lift and return the swallow-check confidence (0..1),
-// or -1 if there is no camera. Send the clip to your vision service here.
-float hwSwallowCheck(int *clipSeconds) {
-  *clipSeconds = 0;
-  return -1.0f;
+// After the lift, film the dose: capture up to `max` JPEG frames a few seconds apart
+// (an ESP32 can't encode real video, so the "clip" is a short burst of frames) and
+// return how many were captured, as base64. 0 if there is no camera.
+// With an ESP32-CAM: camera_fb_t *fb = esp_camera_fb_get(); frames[i] = base64::encode(fb->buf, fb->len);
+// esp_camera_fb_return(fb); delay(4000); ... Use FRAMESIZE_QVGA so each frame stays around 10 KB.
+int hwCaptureFrames(String frames[], int max) {
+  (void)frames;
+  (void)max;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +128,25 @@ void flushQueue() {
     for (int i = 1; i < queued; i++) queue[i - 1] = queue[i];
     queued--;
   }
+}
+
+// The dose's clip goes to the Pronoia server (api/device-clip), which runs the AI check
+// and records the result. The server checks this device's code and secret first.
+void uploadClip(int slot, int minutes, String frames[], int n) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  WiFiClientSecure tls;
+  tls.setInsecure();  // TODO for production: pin the server's root certificate.
+  HTTPClient http;
+  http.setTimeout(60000);  // the AI check takes a few seconds
+  http.begin(tls, String(PRONOIA_API_URL) + "/api/device-clip");
+  http.addHeader("Content-Type", "application/json");
+  String body = String("{\"code\":\"") + DEVICE_CODE + "\",\"secret\":\"" + DEVICE_SECRET + "\",\"slot\":" + slot +
+                ",\"time\":\"" + hhmm(minutes) + "\",\"frames\":[";
+  for (int i = 0; i < n; i++) body += String(i ? "," : "") + "\"data:image/jpeg;base64," + frames[i] + "\"";
+  body += "]}";
+  int status = http.POST(body);
+  Serial.printf("[clip] %d %s\n", status, http.getString().c_str());
+  http.end();
 }
 
 String doseEvent(const char *type, int slot, int minutes) {
@@ -207,13 +230,9 @@ void watchCup() {
     hwReminder(false);
     reminding = false;
     send(doseEvent("picked_up", doseSlot, doseMinutes));
-    int clipSeconds = 0;
-    float confidence = hwSwallowCheck(&clipSeconds);
-    if (confidence >= 0) {
-      String e = String("{\"type\":\"swallow\",\"slot\":") + doseSlot + ",\"time\":\"" + hhmm(doseMinutes) +
-                 "\",\"confidence\":" + String(confidence, 2) + ",\"clip_seconds\":" + clipSeconds + "}";
-      send(e);
-    }
+    String frames[3];
+    int n = hwCaptureFrames(frames, 3);
+    if (n > 0) uploadClip(doseSlot, doseMinutes, frames, n);
     phase = IDLE;
   } else if (!reminding && waited > (uint32_t)reminderAfterMin * 60000) {
     hwReminder(true);

@@ -14,12 +14,12 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HttpError, handleCheckDose, hasApiKey, model, supabaseUserOk } from './checkDose.mjs';
+import { HttpError, handleCheckDose, handleDeviceClip, hasApiKey, model, supabaseUserOk } from './checkDose.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const DIST = resolve(here, '..', 'dist');
 const PORT = Number(process.env.PORT ?? 8787);
-const MAX_BODY = 6_000_000;
+const MAX_BODY = 5_000_000;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -75,7 +75,8 @@ async function api(req, res) {
   const h = cors(req);
   if (req.method === 'OPTIONS') return send(res, 204, {}, h);
   if (req.url === '/api/health') return send(res, 200, { ok: true, ai: hasApiKey(), model: model() }, h);
-  if (req.url !== '/api/check-dose' || req.method !== 'POST') return send(res, 404, { error: 'Not found' }, h);
+  const route = req.url === '/api/check-dose' ? 'check' : req.url === '/api/device-clip' ? 'device' : null;
+  if (!route || req.method !== 'POST') return send(res, 404, { error: 'Not found' }, h);
   let body;
   try {
     body = await readBody(req);
@@ -83,7 +84,10 @@ async function api(req, res) {
     return send(res, e instanceof HttpError ? e.status : 400, { error: e.message }, h);
   }
   const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
-  const out = await handleCheckDose(body, { ip, signedIn: () => supabaseUserOk(req.headers.authorization) });
+  const out =
+    route === 'device'
+      ? await handleDeviceClip(body, { ip })
+      : await handleCheckDose(body, { ip, signedIn: () => supabaseUserOk(req.headers.authorization) });
   send(res, out.status, out.body, h);
 }
 

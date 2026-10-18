@@ -83,10 +83,10 @@ export interface DoseRecord {
   events: TimedEvent[];
   /** AI check confidence, 0..100 (Phone and Device plans). */
   confidence?: number;
-  /** Still frames from the camera, kept until reviewed or a few hours pass. */
+  /** The dose's video (or photos) from the camera, kept until reviewed or a few hours pass. */
   frames?: {
     state: 'awaiting' | 'reviewed' | 'deleted';
-    images: string[]; // data URLs (empty when the frames are illustrative samples)
+    images: string[]; // data URLs: one video, or up to 3 photos
     sample?: boolean;
     capturedAt: number;
     reviewedAt?: number;

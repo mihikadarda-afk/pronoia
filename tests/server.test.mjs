@@ -124,3 +124,61 @@ test('with Supabase configured, the check needs a signed-in user', async () => {
     api.close();
   }
 });
+
+const VIDEO = 'data:video/webm;base64,' + Buffer.from('fake-webm-bytes').toString('base64');
+
+test('the dose station sends a video', async () => {
+  const api = await fakeGemini({ status: 'taken', confidence: 88, reason: 'Taken with water.' });
+  const app = await startApp({ GEMINI_API_KEY: 'test-key', GEMINI_BASE_URL: api.url });
+  try {
+    const res = await post(app.base, { video: VIDEO, time: '08:00' });
+    assert.equal(res.status, 200);
+    const parts = api.seen[0].body.contents[0].parts;
+    assert.equal(parts.find((p) => p.inlineData).inlineData.mimeType, 'video/webm');
+    assert.equal((await post(app.base, { video: 'data:video/avi;base64,AAAA' })).status, 400);
+  } finally {
+    app.stop();
+    api.close();
+  }
+});
+
+test('the dispenser uploads its clip: checked, then recorded', async () => {
+  // One fake for both Gemini and Supabase's RPC endpoint.
+  const calls = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      calls.push({ url: req.url, body: body ? JSON.parse(body) : null });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.includes(':generateContent')) {
+        res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"status":"taken","confidence":90,"reason":"Taken."}' }] } }] }));
+      } else if (req.url.endsWith('/device_known')) {
+        res.end(JSON.stringify(JSON.parse(body).p_secret === 'right'));
+      } else {
+        res.end(JSON.stringify('taken'));
+      }
+    });
+  });
+  server.listen(0);
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const app = await startApp({ GEMINI_API_KEY: 'k', GEMINI_BASE_URL: url, SUPABASE_URL: url, SUPABASE_ANON_KEY: 'anon' });
+  const upload = (body) => fetch(`${app.base}/api/device-clip`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const bad = await upload({ code: 'PRN-1', secret: 'wrong', slot: 1, time: '08:00', frames: [FRAME] });
+    assert.equal(bad.status, 403);
+    assert.ok(!calls.some((c) => c.url.includes(':generateContent')), 'no AI check for an unknown dispenser');
+
+    const ok = await upload({ code: 'PRN-1', secret: 'right', slot: 1, time: '08:00', frames: [FRAME, FRAME] });
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).recorded, 'taken');
+    const rec = calls.find((c) => c.url.endsWith('/device_clip_result'));
+    assert.equal(rec.body.p_status, 'taken');
+    assert.equal(rec.body.p_confidence, 90);
+    assert.equal(rec.body.p_media.length, 2);
+  } finally {
+    app.stop();
+    server.close();
+  }
+});

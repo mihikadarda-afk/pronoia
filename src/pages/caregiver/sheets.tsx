@@ -3,7 +3,7 @@ import { Pebble } from '../../components/Pebble';
 import { Locked, PillPhoto, Placeholder, Sheet, Status, useToast } from '../../components/ui';
 import { checkInStatus, checkInTitle, doseStatus, pillName } from '../../lib/copy';
 import { addMin, countdown, fmtDay, fmtTime, hhmmLabel } from '../../lib/time';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService } from '../../services/deviceService';
 import { hasPlan } from '../../services/plans';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 import type { TimedEvent } from '../../services/types';
@@ -40,6 +40,8 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
   const r = dose.record;
   const frames = r?.frames;
   const framesLive = frames?.state === 'awaiting' && dose.framesDeleteAt && dose.framesDeleteAt.getTime() > now.getTime();
+  const isVideo = !!frames?.images[0]?.startsWith('data:video/') || (!frames?.images.length && plan !== 'free');
+  const what = isVideo ? 'video' : 'photos';
   const st = doseStatus(dose, plan);
   const tz = parent.timeZone;
 
@@ -85,29 +87,29 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
         <div style={{ marginTop: 14 }}>
           {framesLive && !reviewing && (
             <button className="btn btn--block" onClick={() => setReviewing(true)}>
-              Review frames
+              {isVideo ? 'Watch the video' : 'Review the photos'}
             </button>
           )}
           {framesLive && reviewing && (
             <div className="stack">
-              <div className="frames">
-                {(frames.images.length ? frames.images : [null, null, null]).map((src, i) =>
-                  src ? (
-                    <img key={i} src={src} alt={`Frame ${i + 1}`} />
-                  ) : (
-                    <div key={i} className="frame-ph">
-                      Sample frame {i + 1}
-                    </div>
-                  ),
-                )}
-              </div>
+              {isVideo ? (
+                <video className="dose-video" src={frames.images[0]} controls playsInline autoPlay muted />
+              ) : frames.images.length ? (
+                <div className="frames">
+                  {frames.images.map((src, i) => (
+                    <img key={i} src={src} alt={`Photo ${i + 1}`} />
+                  ))}
+                </div>
+              ) : (
+                <p className="small muted" style={{ margin: 0 }}>Nothing was kept for this dose.</p>
+              )}
               {frames.note && <p className="small muted" style={{ margin: 0 }}>AI check: {frames.note}</p>}
               <div className="btn-row">
                 <button
                   className="btn btn--secondary"
                   onClick={() => {
                     deviceService.reviewFrames(dose.id, 'not_taken');
-                    toast('Marked not taken. The frames were deleted.');
+                    toast(`Marked not taken. The ${what} ${isVideo ? 'was' : 'were'} deleted.`);
                   }}
                 >
                   Not taken
@@ -116,7 +118,7 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
                   className="btn"
                   onClick={() => {
                     deviceService.reviewFrames(dose.id, 'taken');
-                    toast('Marked taken. The frames were deleted.');
+                    toast(`Marked taken. The ${what} ${isVideo ? 'was' : 'were'} deleted.`);
                   }}
                 >
                   Looks good
@@ -126,13 +128,13 @@ export function DoseSheet({ id, onClose }: { id: string | null; onClose: () => v
           )}
           {framesLive ? (
             <p className="small muted center" style={{ margin: '10px 0 0' }}>
-              Frames delete in {countdown(dose.framesDeleteAt!.getTime(), now.getTime())}, or as soon as you review them.
+              {isVideo ? 'The video is' : 'The photos are'} deleted in {countdown(dose.framesDeleteAt!.getTime(), now.getTime())}, or as soon as you review {isVideo ? 'it' : 'them'}.
             </p>
           ) : (
             <p className="small muted" style={{ margin: '4px 0 0' }}>
               {frames.verdict
-                ? `You reviewed this dose. The frames were deleted.`
-                : `The frames were deleted at ${fmtTime(dose.framesDeleteAt ?? now, tz)} without a review.`}
+                ? `You reviewed this dose. The ${what} ${isVideo ? 'was' : 'were'} deleted.`
+                : `The ${what} ${isVideo ? 'was' : 'were'} deleted at ${fmtTime(dose.framesDeleteAt ?? now, tz)} without a review.`}
             </p>
           )}
         </div>
@@ -205,11 +207,6 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
       {c.status === 'missed_notified' && (
         <div className="stack" style={{ marginTop: 14 }}>
           {parent.whatsapp && <p className="small strong" style={{ margin: 0 }}>Call {parent.name}: <span className="num">{parent.whatsapp}</span></p>}
-          {isDemo && refiller && (
-            <button className="btn btn--secondary btn--block" onClick={() => deviceService.demo?.refillerRepliesOk(c.id)}>
-              Demo: {refiller.name} replies OK
-            </button>
-          )}
         </div>
       )}
       {c.status === 'help' && parent.whatsapp && <p className="small strong">Call {parent.name}: <span className="num">{parent.whatsapp}</span></p>}

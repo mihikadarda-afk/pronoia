@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppBar, Locked, Placeholder, Says, SectionHead, Status } from '../../components/ui';
 import { relTime } from '../../lib/time';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService } from '../../services/deviceService';
 import { useAppState, useNow, usePeople } from '../../services/useApp';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -103,11 +103,6 @@ export function Station() {
           >
             Pair the dispenser
           </button>
-          {isDemo && (
-            <button className="link-btn small" style={{ marginTop: 8 }} onClick={() => setCode('PRN-82QX-7M')}>
-              Scan the code (the demo fills it in)
-            </button>
-          )}
         </>
       ) : (
         <>

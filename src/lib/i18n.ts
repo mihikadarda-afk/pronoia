@@ -70,7 +70,7 @@ const strings = {
     // privacy
     privacyTitle: 'My camera promise',
     privacy1: 'The camera only turns on at pill time.',
-    privacy2: 'It takes 3 still pictures, and they are deleted within a few hours.',
+    privacy2: 'It films a short video, and it is deleted within a few hours.',
     privacy3: 'Saying hi never uses the camera.',
     gotIt: 'Got it',
     // menu
@@ -144,7 +144,7 @@ const strings = {
     continue: 'आगे बढ़ें',
     privacyTitle: 'मेरा कैमरा वादा',
     privacy1: 'कैमरा सिर्फ़ गोली के समय चालू होता है।',
-    privacy2: 'यह 3 तस्वीरें लेता है, जो कुछ घंटों में मिटा दी जाती हैं।',
+    privacy2: 'यह एक छोटा वीडियो बनाता है, जो कुछ घंटों में मिटा दिया जाता है।',
     privacy3: 'नमस्ते कहने में कैमरा कभी इस्तेमाल नहीं होता।',
     gotIt: 'ठीक है',
     menu: 'मेन्यू',
@@ -217,7 +217,7 @@ const strings = {
     continue: 'આગળ વધો',
     privacyTitle: 'મારું કેમેરા વચન',
     privacy1: 'કેમેરા ફક્ત ગોળીના સમયે જ ચાલુ થાય છે.',
-    privacy2: 'તે 3 ફોટા લે છે, જે થોડા કલાકોમાં ભૂંસી નાખવામાં આવે છે.',
+    privacy2: 'તે એક નાનો વિડિયો લે છે, જે થોડા કલાકોમાં ભૂંસી નાખવામાં આવે છે.',
     privacy3: 'નમસ્તે કહેવામાં કેમેરા ક્યારેય વપરાતો નથી.',
     gotIt: 'સમજાયું',
     menu: 'મેનુ',

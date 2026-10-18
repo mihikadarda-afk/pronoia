@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { Pebble } from '../components/Pebble';
-import { Avatar, Chevron, Placeholder } from '../components/ui';
+import { Avatar, Chevron } from '../components/ui';
 import { useSession, type SessionRole } from '../lib/session';
 import { useAppState, usePeople } from '../services/useApp';
 
-/** The demo's front door: pick whose phone to look at. */
+/** The front door when everything stays on this phone: set up a family, join one, or carry on. */
 export function SignIn() {
   const { signIn } = useSession();
   const s = useAppState();
@@ -14,15 +14,15 @@ export function SignIn() {
     signIn(role, role === 'parent' ? { parentLinked: true } : undefined);
     nav(role === 'caregiver' ? '/care' : role === 'parent' ? '/parent' : '/station');
   };
-  const who: { role: SessionRole; title: string; sub: string; person?: typeof caregiver }[] = [
-    { role: 'caregiver', title: `${caregiver.name}, caregiver`, sub: `${caregiver.city} · gets the alerts`, person: caregiver },
-    { role: 'parent', title: `${parent.name}, parent`, sub: `${parent.city} · big text, simple view`, person: parent },
-    { role: 'station', title: 'Dose station', sub: s.plan.tier === 'phone' ? 'The old phone next to the pill box' : 'Phone plan only' },
+  const here: { role: SessionRole; title: string; sub: string; person?: typeof caregiver }[] = [
+    { role: 'caregiver', title: caregiver.name, sub: `Caregiver · ${caregiver.city}`, person: caregiver },
+    { role: 'parent', title: parent.name, sub: `Parent · ${parent.city}`, person: parent },
+    ...(s.plan.tier === 'phone' ? [{ role: 'station' as SessionRole, title: 'Dose station', sub: 'The old phone next to the pill box' }] : []),
   ];
 
   return (
     <main className="screen screen--plain">
-      <div className="row" style={{ padding: '40px 0 24px', gap: 14 }}>
+      <div className="row" style={{ padding: '40px 0 28px', gap: 14 }}>
         <Pebble mood="waving" size={56} />
         <div>
           <h1 className="title">Pronoia</h1>
@@ -32,9 +32,18 @@ export function SignIn() {
         </div>
       </div>
 
-      <h2 className="small muted" style={{ fontWeight: 600, marginBottom: 6 }}>Open the demo as</h2>
+      <div className="stack">
+        <button className="btn btn--block" onClick={() => nav('/setup')}>
+          Set up a family
+        </button>
+        <button className="btn btn--secondary btn--block" onClick={() => nav('/join')}>
+          I have a family code
+        </button>
+      </div>
+
+      <h2 className="small muted" style={{ fontWeight: 600, margin: '32px 0 6px' }}>{s.circleName || 'Your circle'} on this phone</h2>
       <ul className="list">
-        {who.map((w) => (
+        {here.map((w) => (
           <li key={w.role}>
             <button className="link-row" onClick={() => go(w.role)}>
               <span className="row grow">
@@ -58,17 +67,6 @@ export function SignIn() {
           </li>
         ))}
       </ul>
-
-      <h2 className="small muted" style={{ fontWeight: 600, margin: '28px 0 6px' }}>New to Pronoia</h2>
-      <div className="btn-row">
-        <button className="btn btn--secondary" onClick={() => nav('/setup')}>
-          Set up a family
-        </button>
-        <button className="btn btn--secondary" onClick={() => nav('/join')}>
-          I have a code
-        </button>
-      </div>
-      <Placeholder>Sign-in is skipped in the demo. Every role shares the same sample family on this device. The Demo button switches plan, role and clock.</Placeholder>
     </main>
   );
 }

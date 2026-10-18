@@ -5,8 +5,6 @@ import { fmtDay, inWindow, instantFor } from '../lib/time';
 export const PARENT_TZ = 'Asia/Kolkata';
 export const CAREGIVER_TZ = 'America/New_York';
 
-/** Parent-local time the demo clock starts at: mid-afternoon in Ahmedabad, so today has done and upcoming items. */
-export const DEMO_START = '15:10';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -87,7 +85,7 @@ function takenEvents(plan: Plan, after: number): TimedEvent[] {
   }
   return [
     { label: 'Reminder on the dose station', minute: 0 },
-    { label: 'Camera checked 3 frames', minute: after },
+    { label: 'Camera recorded a 12-second video', minute: after },
     { label: 'AI check: taken', minute: after },
   ];
 }

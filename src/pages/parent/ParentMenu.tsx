@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { LANGS, langName, useT } from '../../lib/i18n';
 import { useSession } from '../../lib/session';
 import { ConfirmButton } from '../../components/ui';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService, isLocal } from '../../services/deviceService';
 
 export function ParentMenu() {
   const t = useT();
@@ -26,7 +26,7 @@ export function ParentMenu() {
           {t.back}
         </button>
       </div>
-      {isDemo ? (
+      {isLocal ? (
         <button
           className="p-link"
           style={{ marginTop: 16 }}

@@ -2,12 +2,11 @@ import { useEffect, useRef } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { TabBar, ToastProvider, useToast } from './components/ui';
-import { DemoPanel } from './components/DemoPanel';
 import { Pebble, PebbleSays } from './components/Pebble';
 import { chime } from './lib/chime';
 import { LiveSignIn } from './pages/LiveSignIn';
 import { RefillerHome } from './pages/RefillerHome';
-import { deviceService, isDemo } from './services/deviceService';
+import { deviceService, isLocal } from './services/deviceService';
 import type { Role } from './services/types';
 import { SignIn } from './pages/SignIn';
 import { Join } from './pages/Join';
@@ -36,11 +35,11 @@ import { ParentWaiting } from './pages/parent/ParentWaiting';
 import { NeedHelp } from './pages/parent/NeedHelp';
 import { useAppState, useAuth, useNow } from './services/useApp';
 
-/** The signed-in role: picked in the demo, or read from the circle when live. */
+/** The signed-in role: picked on this phone, or read from the circle when live. */
 function useRole(): Role | null {
   const session = useSession();
   const auth = useAuth();
-  if (isDemo) return session.role;
+  if (isLocal) return session.role;
   return auth.status === 'ready' || auth.status === 'pending' ? (auth.role ?? null) : null;
 }
 
@@ -67,9 +66,9 @@ function CaregiverLayout() {
   const role = useRole();
   const auth = useAuth();
   const s = useAppState();
-  if (!isDemo && auth.status === 'loading') return <Splash />;
+  if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'caregiver') return <Navigate to="/" replace />;
-  if (!isDemo && auth.status === 'pending') {
+  if (!isLocal && auth.status === 'pending') {
     return (
       <main className="screen screen--plain" style={{ paddingTop: 80 }}>
         <PebbleSays mood="sleepy" size={48}>
@@ -122,11 +121,11 @@ function ParentLayout() {
   const auth = useAuth();
   const s = useAppState();
   useParentMoments();
-  if (!isDemo && auth.status === 'loading') return <Splash />;
+  if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'parent') return <Navigate to="/" replace />;
-  if (isDemo && !parentLinked) return <Navigate to="/join" replace />;
+  if (isLocal && !parentLinked) return <Navigate to="/join" replace />;
   const parent = s.people.find((p) => p.id === s.parentId);
-  const waiting = isDemo ? parent?.status === 'pending' : auth.status === 'pending';
+  const waiting = isLocal ? parent?.status === 'pending' : auth.status === 'pending';
   return <div lang={lang}>{waiting ? <ParentWaiting /> : <Outlet />}</div>;
 }
 
@@ -134,9 +133,9 @@ function StationLayout() {
   const role = useRole();
   const auth = useAuth();
   const { lang } = useSession();
-  if (!isDemo && auth.status === 'loading') return <Splash />;
+  if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'station') return <Navigate to="/" replace />;
-  if (!isDemo && auth.status === 'pending') {
+  if (!isLocal && auth.status === 'pending') {
     return (
       <div className="station">
         <PebbleSays mood="sleepy" size={110} align="stack">
@@ -155,7 +154,7 @@ function StationLayout() {
 function Home() {
   const role = useRole();
   const auth = useAuth();
-  if (!isDemo) {
+  if (!isLocal) {
     if (auth.status === 'loading') return <Splash />;
     if (auth.status === 'signed-out') return <LiveSignIn />;
     if (auth.status === 'no-circle') return <Navigate to="/setup" replace />;
@@ -174,7 +173,6 @@ export function App() {
         <ErrorToasts />
         <HashRouter>
           <div className="app">
-            <DemoPanel />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/join" element={<Join />} />

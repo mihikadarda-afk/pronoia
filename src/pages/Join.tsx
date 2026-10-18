@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Pebble, PebbleSays } from '../components/Pebble';
-import { Avatar, Placeholder } from '../components/ui';
+import { Avatar } from '../components/ui';
 import { LANGS, langName, useT } from '../lib/i18n';
 import { useSession } from '../lib/session';
 import { EmailCodeForm } from '../components/EmailCodeForm';
-import { deviceService, isDemo, normalizeCode } from '../services/deviceService';
+import { deviceService, isLocal, normalizeCode } from '../services/deviceService';
 import { useAuth } from '../services/useApp';
 import type { Person, Role } from '../services/types';
 import { PrivacyPromise } from './parent/ParentPrivacy';
@@ -47,7 +47,7 @@ export function Join() {
   };
 
   const connect = async () => {
-    if (!isDemo && role === 'caregiver' && (auth.status === 'signed-out' || auth.isAnonymous)) {
+    if (!isLocal && role === 'caregiver' && (auth.status === 'signed-out' || auth.isAnonymous)) {
       setStep('email');
       return;
     }
@@ -160,18 +160,6 @@ export function Join() {
           <button className="p-btn" disabled={busy || code.length < 7 || (needsName && !name.trim())} onClick={() => check()}>
             {t.next}
           </button>
-          {isDemo && (
-            <button
-              className="p-link"
-              onClick={() => {
-                const c = deviceService.getState().code.code;
-                setCode(c);
-                check(c);
-              }}
-            >
-              {t.scanQr} (the demo fills it in)
-            </button>
-          )}
         </div>
       )}
 
@@ -187,7 +175,7 @@ export function Join() {
               {caregiver.city}
             </p>
           </div>
-          <button className="p-btn" disabled={busy} onClick={() => (role === 'parent' || role === 'station' ? setStep('privacy') : connect())}>
+          <button className="p-btn" disabled={busy} onClick={() => (role === 'station' || (role === 'parent' && !(isLocal && deviceService.getState().plan.tier === 'free')) ? setStep('privacy') : connect())}>
             {t.yesConnect}
           </button>
           <button className="p-link" onClick={() => setStep('code')}>
@@ -229,7 +217,6 @@ export function Join() {
           <button className="p-btn" onClick={() => nav('/')}>
             {t.continue}
           </button>
-          {isDemo && <Placeholder>Demo: open the caregiver side to approve this request in Family.</Placeholder>}
         </div>
       )}
     </main>

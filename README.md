@@ -6,7 +6,7 @@ It has three sides that link with a family code:
 
 - **Caregiver**: Today (doses and check-ins on one timeline, in both time zones), medicines, family, settings, plans, alerts, weekly summary, refills, privacy.
 - **Parent**: huge text and big buttons in English, Hindi or Gujarati. The next pill with its photo, I took it, a one-tap I’m okay, I’m going out, Message my family, I need help.
-- **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, takes 3 still frames and asks Gemini whether the pill was taken.
+- **Dose station** (Phone plan): an old phone on a stand by the pill box. At dose time it shows the pill, turns its camera on by itself, films a 12-second video and asks Gemini whether the pill was taken.
 
 **Pebble**, the capsule mascot, appears on every main screen in six moods.
 
@@ -14,9 +14,9 @@ It has three sides that link with a family code:
 
 | Plan | Price | What the family gets |
 | --- | --- | --- |
-| Free | $0 | Reminders with a photo of the right pill, I took it taps, daily check-ins, a simple log. No caregiver alerts, no camera |
-| Phone | $9 a month or $79 a year | The dose station with the AI check, WhatsApp alerts with a confidence score, missed check-ins escalate to the refiller, then the caregiver |
-| Device | $199 once + $15 a month | The Pronoia dispenser: 5 slots, weight sensors, camera, I’m okay button, pill counts, defect replacement |
+| Free | $0 | Reminders with a photo of the right pill, I took it taps, daily check-ins, a simple log. No camera or video at all, and no caregiver alerts |
+| Phone | $9 a month or $79 a year | An old phone on a stand films a 12-second video at each dose for the AI check. WhatsApp alerts with a confidence score; missed check-ins escalate to the refiller, then the caregiver |
+| Device | $299 once + $15 a month | The Pronoia dispenser: 5 slots, weight sensors, I’m okay button, pill counts, defect replacement. Its own camera films each dose and uploads the clip for the AI check |
 
 Higher-plan features show as soft locked cards with an Upgrade link, never pop-ups.
 
@@ -26,26 +26,28 @@ A few times a day (10:30 AM and 4:30 PM by default, never in sleep hours) Pebble
 
 ## Modes
 
-- **Demo**: a sample family in the browser, used when Supabase isn’t configured (or with `?demo`). The clock starts at 3:10 PM in Ahmedabad, so today has done and upcoming items, and the week has one missed dose, one “picked up, not confirmed”, one missed check-in Ravi answered (“He was at the temple”) and one I’m going out pause. A small **Demo** button switches role (caregiver, parent, dose station), plan (Free, Phone, Device) and moves the clock forward.
+- **This phone only**: used when Supabase isn’t configured (or with `?local`). Everything is kept in this browser and starts with a sample family (Mihika, Nanaji, Ravi) and a week of history, which **Set up a family** lets you replace. The front page lets you open the caregiver, parent or dose station view on the same phone.
 - **Live**: real accounts and data in [Supabase](https://supabase.com), used when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev        # the app, http://localhost:5173 (demo unless Supabase is configured)
+npm run dev        # the app, http://localhost:5173 (this-phone-only unless Supabase is configured)
 GEMINI_API_KEY=... npm run dev:api    # the AI dose check server, http://localhost:8787 (vite proxies /api to it)
 ```
 
-The AI check needs `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey)) in the server’s environment. It is only ever read by `server/` and `api/`, never bundled into the app. Without it (or without a camera), the dose station offers **Use sample frames** instead.
+The AI check needs `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey)) in the server’s environment. It is only ever read by `server/` and `api/`, never bundled into the app. Without it (or without a camera), the dose station says what’s wrong and tries again a minute later; if the dose still isn’t confirmed, the caregiver gets the usual missed-dose WhatsApp.
 
 For production, `npm run build` then `npm run serve` serves `dist/` and `/api/check-dose` from one Node process. If the app is hosted elsewhere, set `VITE_API_URL` at build time and `ALLOWED_ORIGIN` on the server.
 
 ### The AI dose check
 
-`POST /api/check-dose` with `{frames: [3 JPEG data URLs], medicine: {name, nickname, strength}, time}` returns `{status: taken | unsure | not_taken, confidence: 0–100, reason}`. It calls Gemini (`gemini-flash-latest` unless `GEMINI_MODEL` says otherwise) with a JSON schema for the answer (`server/checkDose.mjs`). Frames stay in memory for that one request. When `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on the server, it requires a signed-in user’s token, and it rate-limits each IP to 60 checks an hour.
+`POST /api/check-dose` with `{video: WebM or MP4 data URL, medicine: {name, nickname, strength}, time}` (or `frames: [up to 3 JPEG data URLs]` on phones that can’t record video) returns `{status: taken | unsure | not_taken, confidence: 0–100, reason}`. It calls Gemini (`gemini-flash-latest` unless `GEMINI_MODEL` says otherwise) with a JSON schema for the answer (`server/checkDose.mjs`), and retries when Google says it’s busy or rate-limited. The video stays in memory for that one request.
 
-On the dose station, a confidence below the caregiver’s review threshold (70% by default) becomes **Picked up, not confirmed**, and the caregiver can review the frames. Frames are deleted when reviewed, or 4 hours after capture.
+`POST /api/device-clip` is the dispenser’s upload: `{code, secret, slot, time, video or frames}`. The server checks the dispenser’s code and secret in Supabase, runs the same AI check and records the result with `device_clip_result()`. It needs `SUPABASE_URL` and `SUPABASE_ANON_KEY` on the server. When `SUPABASE_URL` and `SUPABASE_ANON_KEY` are set on the server, it requires a signed-in user’s token, and it rate-limits each IP to 60 checks an hour.
+
+On the dose station, a confidence below the caregiver’s review threshold (70% by default) becomes **Picked up, not confirmed**, and the caregiver can watch the video. Videos are deleted when reviewed, or 4 hours after capture.
 
 ## Deploy on Vercel
 
@@ -53,7 +55,7 @@ On the dose station, a confidence below the caregiver’s review threshold (70% 
 2. In **Settings → Environment Variables**, add `GEMINI_API_KEY` for Production and Preview. Optional: `GEMINI_MODEL`, and for the live app `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
 3. Deploy, then open `/api/health` on your site. It should say `"ai": true`.
 
-Without the Supabase variables the site runs the demo family, and `/api/check-dose` is open to anyone who finds it (limited to 60 checks an hour per IP on each server instance). Set a budget or quota on the key in Google Cloud.
+Without the Supabase variables the site keeps everything on each visitor’s phone, and `/api/check-dose` is open to anyone who finds it (limited to 60 checks an hour per IP on each server instance). Set a budget or quota on the key in Google Cloud.
 
 ## What’s real and what isn’t yet
 
@@ -61,13 +63,14 @@ Without the Supabase variables the site runs the demo family, and `/api/check-do
 | --- | --- |
 | Accounts, family codes (once, 24 h), caregiver approval, who sees what | Real (Supabase, row-level security) |
 | Plans, check-ins, escalation, pauses, hearts | Real in the database (`escalate_check_ins` runs every 5 minutes with pg_cron) |
-| Dose station camera and AI check | Real (needs `GEMINI_API_KEY`), with a sample-frames fallback |
+| Dose station video and AI check | Real (needs `GEMINI_API_KEY`). Tested end to end with a fake camera feed and the real Gemini API |
+| Dispenser clip upload | Real on the server and in the database; the ESP32 camera capture in the firmware is still a stub to fill in |
 | Dispenser API and missed-dose detection | Real; ESP32 firmware written, not yet run on hardware |
 | WhatsApp, SMS, email, calls | **Queued, not sent.** Every message lands in the `outbox` table. The refiller’s OK reply comes in through `refiller_replied_ok()` once a WhatsApp provider’s webhook calls it |
 | Voice notes | Recorded on the caregiver’s phone; the parent sees that one arrived, the audio isn’t delivered yet |
 | Payments | **Mocked** |
 | Pebble artwork | Drawn in SVG (`src/components/Pebble.tsx`). The four `mascot/v4` images weren’t in this repo |
-| Demo pill photos and portraits | Illustrations in `public/pills` and `public/people`. Caregivers add real photos per medicine |
+| Sample pill photos and portraits | Illustrations in `public/pills` and `public/people`. Caregivers add real photos per medicine |
 
 ## Set up the live app
 
@@ -157,11 +160,11 @@ supabase/migrations/  tables, row-level security, server functions, cron jobs
 src/
   services/
     service.ts        the DeviceService interface every screen uses
-    mockService.ts    the demo family and its clock
+    mockService.ts    the family on this phone, and its clock
     liveService.ts    Supabase
     aiCheck.ts        the app's side of the AI check
     plans.ts, notifications.ts, mockData.ts, types.ts
-  components/         Pebble, rows, bottom sheets, locked cards, family code, demo panel
+  components/         Pebble, rows, bottom sheets, locked cards, family code
   pages/              caregiver/*, parent/*, Station (dose station), Join, sign-in
   lib/                time zones, copy, translations (en/hi/gu), chime, session
 scripts/              provision or simulate a dispenser, SQL tests
@@ -169,12 +172,9 @@ firmware/             ESP32 sketch
 tests/
 ```
 
-## Demo walkthrough
+## Try it
 
-1. Open the app and pick **Mihika, caregiver**. Today shows 2 of 4 doses and Nanaji’s check-ins. Tap a row for its bottom sheet.
-2. **Demo → Next dose**, then **Demo → Dose station**: the old phone chimes, shows the white BP tablet and turns the camera on. Allow the camera to send real frames to the AI check, or tap a **Use sample frames** answer.
-3. Back as the caregiver: the dose is Taken (or Needs a look, with **Review frames**). The WhatsApp that would have gone out is under **Settings → Messages**.
-4. **Demo → Next check-in**, then **+15 min** a few times: at 25 minutes Ravi is asked, at 45 Mihika. Open the check-in to make Ravi reply OK.
-5. **Demo → Parent**: big text, I’m okay, I’m going out, Message my family. Switch the language in the menu.
-6. **Demo → Free** or **Device** to see the other plans. **This week** has the week grid.
-7. **Family** has the code `PEB-4K7`. From the start screen, **I have a code → I’m the parent → PEB-4K7** shows linking.
+1. Open the app and tap **Set up a family**. Pick a plan first: Free, Phone or Device. The steps after it follow the plan: Phone adds setting up the old phone, Device adds pairing the dispenser.
+2. On another phone (or from the front page of the same one), **I have a family code → I’m the parent**. On the Phone plan, the old phone joins with **This is the dose station** and a new code.
+3. At dose time the station chimes, shows the pill, films 12 seconds and sends the video to the AI check. The caregiver sees Taken, or Needs a look with **Watch the video**.
+4. **Settings → Plans** compares the three plans; **This week** has the week grid. What would have gone out on WhatsApp is under **Settings → Messages**.

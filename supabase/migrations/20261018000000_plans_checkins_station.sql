@@ -201,28 +201,31 @@ begin
   where dose_records.status in ('due', 'unmarked');
 end $$;
 
--- The dose station's AI check for one dose. p_status: taken | unsure | not_taken; p_confidence 0..100.
-create function public.station_dose_result(
-  p_slot int, p_time text, p_status text, p_confidence int, p_note text default null,
-  p_frames jsonb default '[]'::jsonb, p_sample boolean default false
+-- Records one AI-checked dose: from the dose station (Phone plan) or the dispenser (Device plan).
+-- p_status: taken | unsure | not_taken; p_confidence 0..100; p_media: [one video data URL] or up to 3 frames.
+create function public.record_ai_dose(
+  p_circle uuid, p_source text, p_slot int, p_time text, p_status text, p_confidence int,
+  p_note text, p_media jsonb, p_sample boolean
 ) returns text
 language plpgsql security definer set search_path = public as $$
 declare
-  me members := me_at_home();
   c circles;
   today date;
   minute int;
   st text;
   parent_name text;
   label text;
+  shot text;
+  is_video boolean := coalesce(p_media ->> 0, '') like 'data:video/%';
 begin
-  if me.id is null or me.role <> 'station' then raise exception 'Only the dose station reports dose results.'; end if;
   if p_status not in ('taken', 'unsure', 'not_taken') then raise exception 'Unknown result.'; end if;
-  if jsonb_typeof(p_frames) <> 'array' or jsonb_array_length(p_frames) > 3 or length(p_frames::text) > 600000 then
-    raise exception 'Send at most 3 small frames.';
+  if jsonb_typeof(p_media) <> 'array' or jsonb_array_length(p_media) > 3 or length(p_media::text) > 4200000 then
+    raise exception 'Send one short video or at most 3 frames.';
   end if;
-  select * into c from circles where id = me.circle_id;
+  select * into c from circles where id = p_circle;
   today := (now() at time zone circle_tz(c.id))::date;
+  -- A dose just after midnight can still belong to yesterday's late slot.
+  if p_time::time > (now() at time zone circle_tz(c.id))::time + interval '1 hour' then today := today - 1; end if;
   minute := minutes_since(c.id, today, p_time);
   st := case
     when p_status = 'not_taken' then 'due'
@@ -233,18 +236,22 @@ begin
     when st = 'due' then 'AI check: didn''t see the pill taken (' || p_confidence || '%)'
     when st = 'unconfirmed' then 'AI check: not sure it was swallowed (' || p_confidence || '%)'
     else 'AI check: taken (' || p_confidence || '%)' end;
+  shot := case when is_video then 'Camera recorded a short video' else 'Camera took ' || jsonb_array_length(p_media) || ' photos' end
+    || case when p_sample then ' (sample)' else '' end;
   insert into dose_records (circle_id, slot, scheduled_date, time, status, confidence, events, frames)
   values (c.id, p_slot, today, p_time, st, p_confidence / 100.0,
     jsonb_build_array(
-      jsonb_build_object('label', 'Reminder on the dose station', 'minute', 0),
-      jsonb_build_object('label', 'Camera checked 3 frames' || case when p_sample then ' (sample)' else '' end, 'minute', minute),
+      jsonb_build_object('label', case when p_source = 'device' then 'Dispensed into the cup' else 'Reminder on the dose station' end, 'minute', 0),
+      jsonb_build_object('label', shot, 'minute', minute),
       jsonb_build_object('label', label, 'minute', minute)),
-    jsonb_build_object('state', 'awaiting', 'images', p_frames, 'sample', p_sample,
+    jsonb_build_object('state', 'awaiting', 'images', p_media, 'sample', p_sample,
       'capturedAt', (extract(epoch from now()) * 1000)::bigint, 'note', p_note))
   on conflict (circle_id, slot, scheduled_date, time) do update set
     status = excluded.status, confidence = excluded.confidence, frames = excluded.frames, updated_at = now(),
-    events = dose_records.events || jsonb_build_array(jsonb_build_object('label', label, 'minute', minute))
-  where dose_records.status in ('due', 'dispensed');
+    events = dose_records.events || jsonb_build_array(
+      jsonb_build_object('label', shot, 'minute', minute),
+      jsonb_build_object('label', label, 'minute', minute))
+  where dose_records.status in ('due', 'dispensed', 'unconfirmed');
   if st = 'due' then return st; end if;
 
   select name into parent_name from members where circle_id = c.id and role = 'parent';
@@ -258,6 +265,45 @@ begin
   end if;
   return st;
 end $$;
+revoke execute on function public.record_ai_dose(uuid, text, int, text, text, int, text, jsonb, boolean) from public, anon, authenticated;
+
+-- The dose station (Phone plan) reports its AI check of the video it recorded.
+create function public.station_dose_result(
+  p_slot int, p_time text, p_status text, p_confidence int, p_note text default null,
+  p_frames jsonb default '[]'::jsonb, p_sample boolean default false
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare me members := me_at_home();
+begin
+  if me.id is null or me.role <> 'station' then raise exception 'Only the dose station reports dose results.'; end if;
+  return record_ai_dose(me.circle_id, 'station', p_slot, p_time, p_status, p_confidence, p_note, p_frames, p_sample);
+end $$;
+
+-- The dispenser (Device plan) uploads its clip to the server (api/device-clip), which runs the
+-- AI check and calls this with the dispenser's own code and secret.
+create function public.device_clip_result(
+  p_code text, p_secret text, p_slot int, p_time text, p_status text, p_confidence int,
+  p_note text default null, p_media jsonb default '[]'::jsonb
+) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare d devices;
+begin
+  select * into d from devices
+  where device_code = upper(p_code) and secret_hash = encode(extensions.digest(p_secret, 'sha256'), 'hex');
+  if not found then raise exception 'Unknown device or wrong secret.' using errcode = '28000'; end if;
+  if d.circle_id is null then raise exception 'This dispenser isn''t paired with a family yet.'; end if;
+  update devices set last_sync = now() where id = d.id;
+  return record_ai_dose(d.circle_id, 'device', p_slot, p_time, p_status, p_confidence, p_note, p_media, false);
+end $$;
+grant execute on function public.device_clip_result(text, text, int, text, text, int, text, jsonb) to anon, authenticated;
+
+-- Lets the server check a dispenser's code and secret before spending an AI check on its upload.
+create function public.device_known(p_code text, p_secret text) returns boolean
+language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from devices where device_code = upper(p_code)
+    and secret_hash = encode(extensions.digest(p_secret, 'sha256'), 'hex') and circle_id is not null)
+$$;
+grant execute on function public.device_known(text, text) to anon, authenticated;
 
 create function public.station_heartbeat(p_battery int, p_charging boolean, p_camera text) returns void
 language plpgsql security definer set search_path = public as $$

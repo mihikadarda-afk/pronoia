@@ -5,21 +5,22 @@ import { PillPhoto } from '../components/ui';
 import { chime } from '../lib/chime';
 import { useT } from '../lib/i18n';
 import { fmtDay, fmtTime, hhmmLabel } from '../lib/time';
-import { AiCheckUnavailable, checkDoseFrames, sampleResult } from '../services/aiCheck';
-import { deviceService, isDemo } from '../services/deviceService';
+import { AiCheckUnavailable, checkDose } from '../services/aiCheck';
+import { deviceService } from '../services/deviceService';
 import { useAppState, useNow, usePeople } from '../services/useApp';
 import type { Dose, DoseCheckResult } from '../services/types';
 
-const FRAME_GAP_MS = 5000;
-const FIRST_FRAME_MS = 6000;
+/** How long the station films at dose time. */
+const RECORD_MS = 12_000;
+const FRAME_GAP_MS = 4000;
 const MAX_TRIES = 3;
 const RETRY_MS = 60_000;
 
 type Phase =
-  | { kind: 'camera' } // camera on, taking frames
+  | { kind: 'camera' } // camera on, filming
   | { kind: 'checking' }
-  | { kind: 'fallback'; reason: string } // no camera or no AI: offer sample frames
-  | { kind: 'retry'; tries: number } // AI didn't see it: try again shortly
+  | { kind: 'problem'; reason: string } // no camera or no AI check: try again in a minute
+  | { kind: 'retry'; tries: number } // the AI didn't see it taken: film again shortly
   | { kind: 'done'; result: DoseCheckResult };
 
 /** Keeps the screen on while the station page is open. */
@@ -64,6 +65,36 @@ function grab(video: HTMLVideoElement): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const toDataUrl = (blob: Blob) =>
+  new Promise<string>((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result));
+    r.onerror = fail;
+    r.readAsDataURL(blob);
+  });
+
+/** Films a short, small clip. Phones without MediaRecorder fall back to 3 still frames. */
+async function film(stream: MediaStream, video: HTMLVideoElement): Promise<{ video: string } | { frames: string[] }> {
+  const type = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t));
+  if (!type) {
+    const frames: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      await sleep(FRAME_GAP_MS);
+      frames.push(grab(video));
+    }
+    return { frames };
+  }
+  const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 350_000 });
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const stopped = new Promise((r) => (rec.onstop = r));
+  rec.start(1000);
+  await sleep(RECORD_MS);
+  rec.stop();
+  await stopped;
+  return { video: await toDataUrl(new Blob(chunks, { type: type.split(';')[0] })) };
+}
+
 function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCamera: (s: 'ready' | 'blocked' | 'error') => void; onFinished: () => void }) {
   const t = useT();
   const { caregiver } = usePeople();
@@ -78,9 +109,9 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
   const nick = dose.medicine.nickname || t.purpose(dose.medicine.purpose);
 
   const finish = useCallback(
-    (result: DoseCheckResult, frames: string[]) => {
-      deviceService.recordDoseCheck(dose.id, result, frames);
-      if (result.status === 'not_taken' && !result.sample && tries.current < MAX_TRIES) setPhase({ kind: 'retry', tries: tries.current });
+    (result: DoseCheckResult, media: string[]) => {
+      deviceService.recordDoseCheck(dose.id, result, media);
+      if (result.status === 'not_taken' && tries.current < MAX_TRIES) setPhase({ kind: 'retry', tries: tries.current });
       else setPhase({ kind: 'done', result });
     },
     [dose.id],
@@ -91,10 +122,10 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
     setPhase({ kind: 'camera' });
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15 } }, audio: false });
     } catch {
       camRef.current('blocked');
-      setPhase({ kind: 'fallback', reason: 'The camera isn’t available on this phone.' });
+      setPhase({ kind: 'problem', reason: 'The camera isn’t available. Allow camera access for this site.' });
       return;
     }
     camRef.current('ready');
@@ -102,22 +133,18 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
     const v = video.current!;
     v.srcObject = stream;
     await v.play().catch(() => {});
-    const frames: string[] = [];
+    let media: { video: string } | { frames: string[] };
     try {
-      await sleep(FIRST_FRAME_MS);
-      for (let i = 0; i < 3; i++) {
-        if (i) await sleep(FRAME_GAP_MS);
-        frames.push(grab(v));
-      }
+      media = await film(stream, v);
     } finally {
       stream.getTracks().forEach((tr) => tr.stop());
       setCamOn(false);
     }
     setPhase({ kind: 'checking' });
     try {
-      finish(await checkDoseFrames(frames, dose.medicine, dose.time), frames);
+      finish(await checkDose(media, dose.medicine, dose.time), 'video' in media ? [media.video] : media.frames);
     } catch (e) {
-      setPhase({ kind: 'fallback', reason: e instanceof AiCheckUnavailable ? e.message : 'The AI check failed.' });
+      setPhase({ kind: 'problem', reason: e instanceof AiCheckUnavailable ? e.message : 'The AI check failed.' });
     }
   }, [dose, finish]);
 
@@ -128,7 +155,7 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
   }, [run]);
 
   useEffect(() => {
-    if (phase.kind !== 'retry') return;
+    if (phase.kind !== 'retry' && !(phase.kind === 'problem' && tries.current < MAX_TRIES)) return;
     const id = setTimeout(() => {
       chime(true);
       run();
@@ -169,23 +196,18 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
         {dose.medicine.withFood ? ` · ${dose.medicine.withFood}` : ''}
       </div>
       <div className="station-sub" style={{ marginTop: 24, fontSize: 18 }}>
-        {phase.kind === 'checking' ? 'Checking…' : phase.kind === 'retry' ? 'I’ll look again in a minute.' : phase.kind === 'fallback' ? phase.reason : t.cameraChecking}
+        {phase.kind === 'checking'
+          ? 'Checking…'
+          : phase.kind === 'retry'
+            ? 'I’ll look again in a minute.'
+            : phase.kind === 'problem'
+              ? `${phase.reason} ${tries.current < MAX_TRIES ? 'I’ll try again in a minute.' : ''}`
+              : t.cameraChecking}
       </div>
-      {(phase.kind === 'fallback' || (isDemo && phase.kind !== 'checking')) && (
-        <div className="row" style={{ marginTop: 18, gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <span className="small muted" style={{ width: '100%' }}>Use sample frames:</span>
-          <button className="btn btn--secondary btn--small" onClick={() => finish(sampleResult('taken'), [])}>
-            Taken
-          </button>
-          <button className="btn btn--secondary btn--small" onClick={() => finish(sampleResult('unsure'), [])}>
-            Not sure
-          </button>
-          {phase.kind === 'fallback' && (
-            <button className="btn btn--secondary btn--small" onClick={run}>
-              Try the camera again
-            </button>
-          )}
-        </div>
+      {phase.kind === 'problem' && (
+        <button className="btn btn--secondary" style={{ marginTop: 18 }} onClick={run}>
+          Try again now
+        </button>
       )}
     </div>
   );

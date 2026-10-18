@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AppBar, ConfirmButton, PillPhoto, Says, SectionHead, Toggle, readImage, useToast } from '../../components/ui';
 import { cityShort, fmtTime, hhmmLabel, instantFor } from '../../lib/time';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
 import type { Medicine, PillShape } from '../../services/types';
 
@@ -153,10 +153,10 @@ export function MedicineEdit() {
             </label>
           </div>
           <p className="hint">The weight sensor keeps this count. Change it only if it looks wrong.</p>
-          {(isDemo || draft.stuck) && (
+          {draft.stuck && (
             <Toggle
-              label={isDemo ? 'Slot is stuck (demo)' : 'Slot is stuck'}
-              hint={isDemo ? 'Pretend the sensor found a jam.' : 'Turn off once someone has cleared it.'}
+              label="Slot is stuck"
+              hint="Turn off once someone has cleared it."
               checked={!!draft.stuck}
               onChange={(v) => set({ stuck: v })}
             />

@@ -117,5 +117,30 @@ do $$ begin assert (select status from dose_records where time = pg_temp.ago(40)
 -- Help from the station alerts everyone
 select pg_temp.as_user(3); set role authenticated; select parent_help(); reset role;
 do $$ begin assert (select count(*) from outbox where text like '🆘 Nanaji pressed I need help%') >= 2; end $$;
+-- Device plan: the dispenser's clip comes back through the server with its code and secret
+update circles set plan = '{"tier":"device"}';
+select provision_device('PRN-TEST-01', 'sekret');
+select pg_temp.as_user(1); set role authenticated; select pair_device(:'cid', 'PRN-TEST-01'); reset role;
+delete from dose_records; delete from outbox;
+set role anon;
+do $$ begin assert device_known('PRN-TEST-01', 'sekret') and not device_known('PRN-TEST-01', 'wrong'), 'device_known'; end $$;
+select device_clip_result('PRN-TEST-01', 'sekret', 1, pg_temp.ago(5), 'taken', 91, 'Taken with water', '["data:video/webm;base64,AAAA"]') as clip;
+reset role;
+do $$ begin
+  assert (select status from dose_records where time = pg_temp.ago(5)) = 'taken', 'device clip: taken';
+  assert (select events -> 0 ->> 'label' from dose_records where time = pg_temp.ago(5)) = 'Dispensed into the cup';
+  assert (select events -> 1 ->> 'label' from dose_records where time = pg_temp.ago(5)) = 'Camera recorded a short video';
+  assert (select count(*) from outbox where text like '✅ Nanaji took the%Confidence: 91%%') >= 1, 'device clip: caregiver told';
+end $$;
+set role anon;
+do $$ begin
+  begin
+    perform device_clip_result('PRN-TEST-01', 'wrong', 1, pg_temp.ago(5), 'taken', 91);
+    raise exception 'wrong secret should fail';
+  exception when sqlstate '28000' then null;
+  end;
+end $$;
+reset role;
+
 select purge_old_frames();
 \echo ALL GOOD

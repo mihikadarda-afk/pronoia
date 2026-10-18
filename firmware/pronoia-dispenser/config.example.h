@@ -13,4 +13,7 @@
 #define DEVICE_CODE "PRN-XXXX-XX"
 #define DEVICE_SECRET "paste-the-secret"
 
-#define FIRMWARE_VERSION "0.1.0"
+// Where the Pronoia app is hosted (Vercel or npm run serve). Dose clips are uploaded here.
+#define PRONOIA_API_URL "https://your-site.vercel.app"
+
+#define FIRMWARE_VERSION "0.2.0"

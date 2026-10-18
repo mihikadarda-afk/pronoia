@@ -4,15 +4,15 @@ import { CreateCircle } from './CreateCircle';
 import { PlanPicker } from './Plans';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
 import { Pebble, type PebbleMood } from '../../components/Pebble';
-import { Avatar, PillPhoto, Placeholder, Says, readImage } from '../../components/ui';
+import { Avatar, PillPhoto, Says, readImage } from '../../components/ui';
 import { useSession } from '../../lib/session';
 import { cityShort, fmtTime, hhmmLabel } from '../../lib/time';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService, isLocal } from '../../services/deviceService';
 import { useAppState, useAuth, usePeople } from '../../services/useApp';
 import type { Billing, Plan } from '../../services/types';
 
 const ZONES = ['Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Asia/Dubai', 'Australia/Sydney'];
-const ALL = ['welcome', 'parent', 'zones', 'plan', 'medicines', 'checkins', 'whatsapp', 'code', 'device', 'done'] as const;
+const ALL = ['welcome', 'plan', 'parent', 'zones', 'medicines', 'checkins', 'whatsapp', 'code', 'station', 'device', 'done'] as const;
 type Step = (typeof ALL)[number];
 
 export function Onboarding() {
@@ -26,13 +26,14 @@ export function Onboarding() {
   const [billing, setBilling] = useState<Billing>(s.plan.billing);
   const [deviceCode, setDeviceCode] = useState('');
   const [deviceErr, setDeviceErr] = useState('');
-  const steps = ALL.filter((x) => x !== 'device' || plan === 'device');
+  // Each plan sets up only what it uses: the old phone on Phone, the dispenser on Device.
+  const steps = ALL.filter((x) => (x !== 'device' || plan === 'device') && (x !== 'station' || plan === 'phone'));
   const i = steps.indexOf(step);
   const next = () => setStep(steps[Math.min(i + 1, steps.length - 1)]);
   const prev = () => (i === 0 ? nav('/') : setStep(steps[i - 1]));
   const now = deviceService.now();
 
-  if (!isDemo) {
+  if (!isLocal) {
     if (auth.status === 'signed-out') return <Navigate to="/" replace />;
     if (auth.status === 'no-circle') return <CreateCircle onCreated={() => setStep('parent')} />;
     if (auth.status !== 'ready') return null;
@@ -42,12 +43,13 @@ export function Onboarding() {
     welcome: ['waving', 'Hi, I’m Pebble. I’ll help you know the right pill was taken, without the 3am phone call.'],
     parent: ['happy', 'Who are we looking after?'],
     zones: ['thinking', 'Where is everyone? I show every time in both places.'],
-    plan: ['happy', 'Pick a plan. You can change it any time.'],
+    plan: ['happy', 'First, how should I know the pill was taken? You can change this any time.'],
     medicines: ['waving', `Add each medicine with a photo of the real pill. ${parent.name || 'Your parent'} will see that photo at dose time.`],
-    checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.`],
+    checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.${plan === 'free' ? '' : ' If a check-in is missed, I ask the refiller first, then you.'}`],
     whatsapp: ['happy', 'Alerts come on WhatsApp. Whose numbers should I use?'],
-    code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I’m the parent and type this code.${plan === 'phone' ? ' The old phone joins the same way.' : ''}`],
-    device: ['thinking', 'The dispenser’s code is printed on the bottom.'],
+    code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I’m the parent and type this code.`],
+    station: ['thinking', `Now the old phone. It films a 12-second video at each dose, and nothing at any other time.`],
+    device: ['thinking', 'Now the dispenser. Its code is printed on the bottom. It films each dose with its own camera and uploads the video.'],
     done: ['celebrating', 'Your family is connected!'],
   };
 
@@ -78,7 +80,15 @@ export function Onboarding() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14, padding: '24px 0 8px' }}>
           <Pebble mood={say[step][0]} size={110} />
           <h1 className="title">{step === 'welcome' ? 'Set up your family circle' : say.done[1]}</h1>
-          <p className="muted" style={{ maxWidth: 340 }}>{step === 'welcome' ? say.welcome[1] : `I’ll tell you when each pill is taken, and only bother you when it matters.`}</p>
+          <p className="muted" style={{ maxWidth: 340 }}>
+            {step === 'welcome'
+              ? say.welcome[1]
+              : plan === 'free'
+                ? `${parent.name || 'Your parent'}’s phone will show the right pill at each dose, and I’ll show you every I took it tap.`
+                : plan === 'phone'
+                  ? `The old phone will film each dose and I’ll tell you on WhatsApp when the pill is taken, with how sure I am.`
+                  : `The dispenser will give out the right pill, film each dose and upload it, and I’ll tell you on WhatsApp when it’s taken.`}
+          </p>
         </div>
       ) : (
         <Says mood={say[step][0]} size={40}>
@@ -194,6 +204,18 @@ export function Onboarding() {
 
         {step === 'code' && <FamilyCodeCard />}
 
+        {step === 'station' && (
+          <>
+            <ol className="small" style={{ paddingLeft: 18, lineHeight: 1.6, margin: '0 0 16px' }}>
+              <li>Put the old phone on a stand facing the spot where {parent.name || 'your parent'} takes pills. Keep it plugged in.</li>
+              <li>Open Pronoia on it, tap <strong>I have a family code</strong>, then <strong>This is the dose station</strong>.</li>
+              <li>Type the code below and allow the camera.</li>
+            </ol>
+            <FamilyCodeCard />
+            <p className="small muted" style={{ marginTop: 10 }}>Each code works once. If you used it for {parent.name || 'your parent'}’s phone, make a new one.</p>
+          </>
+        )}
+
         {step === 'device' && (
           <>
             <label className="field">
@@ -209,11 +231,6 @@ export function Onboarding() {
               />
             </label>
             {deviceErr && <p className="error-text">{deviceErr}</p>}
-            {isDemo && (
-              <button className="link-btn small" onClick={() => setDeviceCode('PRN-82QX-7M')}>
-                Scan the code (the demo fills it in)
-              </button>
-            )}
           </>
         )}
       </div>
@@ -250,7 +267,6 @@ export function Onboarding() {
           </button>
         )}
       </div>
-      {isDemo && step === 'welcome' && <Placeholder>The demo starts filled in with a sample family.</Placeholder>}
     </main>
   );
 }

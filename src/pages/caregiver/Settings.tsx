@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { AppBar, Avatar, ConfirmButton, LinkRow, PlanBadge, SectionHead, Status } from '../../components/ui';
 import { useSession } from '../../lib/session';
-import { deviceService, isDemo } from '../../services/deviceService';
+import { deviceService, isLocal } from '../../services/deviceService';
 import { planInfo } from '../../services/plans';
 import { useAppState, useAuth, usePeople } from '../../services/useApp';
 
@@ -49,7 +49,7 @@ export function Settings() {
       </ul>
 
       <div style={{ marginTop: 24 }}>
-        {isDemo ? (
+        {isLocal ? (
           <button className="btn btn--secondary btn--block" onClick={() => { session.signOut(); nav('/'); }}>
             Switch person
           </button>

@@ -11,12 +11,13 @@ const FEATURES: { label: string; on: Plan[] }[] = [
   { label: 'Reminders with the pill’s photo', on: ['free', 'phone', 'device'] },
   { label: 'Parent taps I took it', on: ['free', 'phone', 'device'] },
   { label: 'Daily check-ins and a log', on: ['free', 'phone', 'device'] },
-  { label: 'Camera and AI check at dose time', on: ['phone', 'device'] },
+  { label: 'Video of each dose, checked by AI', on: ['phone', 'device'] },
+  { label: 'Filmed by an old phone on a stand', on: ['phone'] },
+  { label: 'Filmed and uploaded by the dispenser', on: ['device'] },
   { label: 'WhatsApp alerts with confidence', on: ['phone', 'device'] },
   { label: 'Missed check-ins alert the refiller, then you', on: ['phone', 'device'] },
   { label: 'Gives out only the right pill', on: ['device'] },
   { label: 'Pill counts and early refill reminders', on: ['device'] },
-  { label: 'Physical I’m okay button', on: ['device'] },
 ];
 
 export function priceFor(p: Plan, billing: Billing) {
@@ -46,6 +47,7 @@ export function PlanPicker({ value, billing, onPick, onBilling }: { value: Plan;
               <span className="plan-price">{priceFor(p.id, billing)}</span>
             </div>
             <div className="small muted">{p.short}</div>
+            <div className="small" style={{ marginTop: 6 }}>{p.video}</div>
             <ul>
               {p.features.map((f) => (
                 <li key={f}>{f}</li>

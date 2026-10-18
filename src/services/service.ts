@@ -57,7 +57,7 @@ export type TimelineItem = { kind: 'dose'; at: Date; dose: Dose } | { kind: 'che
  * demo family in the browser; `LiveDeviceService` talks to Supabase.
  */
 export interface DeviceService {
-  readonly mode: 'demo' | 'live';
+  readonly mode: 'local' | 'live';
   getState(): AppState;
   subscribe(fn: () => void): () => void;
   now(): Date;
@@ -142,19 +142,6 @@ export interface DeviceService {
   /** The dose station reports in. */
   stationHeartbeat(patch: Partial<StationStatus>): void;
 
-  // Demo only
-  demo?: DemoControls;
-}
-
-export interface DemoControls {
-  /** Move the demo clock forward. */
-  advance(minutes: number): void;
-  /** Jump to the next dose or check-in time. */
-  jumpToNext(kind: 'dose' | 'checkin'): string | null;
-  setStationOnline(online: boolean): void;
-  setDeviceOnline(online: boolean): void;
-  refillerRepliesOk(id: string): void;
-  reset(): void;
 }
 
 export function normalizeCode(input: string): string {

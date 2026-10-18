@@ -6,7 +6,7 @@ export type SessionRole = 'caregiver' | 'parent' | 'station';
 interface Session {
   role: SessionRole | null;
   lang: Lang;
-  /** True once someone has joined on the parent side (or the demo parent is signed in). */
+  /** True once someone has joined on the parent side. */
   parentLinked: boolean;
 }
 

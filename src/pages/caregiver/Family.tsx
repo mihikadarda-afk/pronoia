@@ -10,7 +10,7 @@ const roleLabel = (p: Person) =>
   p.role === 'parent' ? 'Parent' : p.role === 'refiller' ? 'Refills, first to check in' : p.isOwner ? 'Caregiver, owner' : 'Caregiver';
 
 const sees: Record<Person['role'], string> = {
-  caregiver: 'Sees every dose and check-in, reviews frames, gets alerts.',
+  caregiver: 'Sees every dose and check-in, reviews dose videos, gets alerts.',
   parent: 'Sees the next pill, taps I took it and I’m okay, and gets your hearts.',
   refiller: 'Gets refill reminders and missed check-in requests on WhatsApp. No dose history.',
   station: 'The old phone by the pill box. Shows pills and checks doses.',
