@@ -74,7 +74,7 @@ Without the Supabase variables the site keeps everything on each visitor’s pho
 
 | Part | Status |
 | --- | --- |
-| Accounts, family codes (once, 24 h), caregiver approval, who sees what | Real (Supabase, row-level security) |
+| Accounts, family codes (once, 24 h, joining right away), who sees what | Real (Supabase, row-level security) |
 | Plans, check-ins, escalation, pauses, hearts | Real in the database (`escalate_check_ins` runs every 5 minutes with pg_cron) |
 | Dose station video and AI check | Real (needs `GEMINI_API_KEY`). Tested end to end with a fake camera feed and the real Gemini API |
 | Raspberry Pi dispenser | `device/raspberry-pi/`: schedule, Pi Camera video, uploads, buttons and retries are real. The slot motor and load cell are hooks to fill in for your build |
@@ -161,7 +161,7 @@ npm test                # the AI check and push servers, against fake Gemini and
 python3 -m unittest tests/test_pi_dispenser.py   # the Raspberry Pi program, in simulate mode
 npm run test:sql        # plans, check-ins, inbox, photos, the station, the dispenser and permissions, on plain Postgres (PGURL=...)
 npm run db:start        # local Supabase (needs Docker), then:
-npm run test:backend    # end-to-end checks of codes, approval, permissions, dispenser API, help, missed doses
+npm run test:backend    # end-to-end checks of codes, permissions, dispenser API, help, missed doses
 ```
 
 Sign-in emails go to the local mail viewer at http://127.0.0.1:54324.

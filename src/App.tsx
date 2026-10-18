@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { SessionProvider, TEXT_ZOOM, useSession } from './lib/session';
 import { TabBar, ToastProvider, useToast } from './components/ui';
-import { Pebble, PebbleSays } from './components/Pebble';
+import { Pebble } from './components/Pebble';
 import { chime } from './lib/chime';
 import { Login, NewPassword } from './pages/Login';
 import { deviceService, isLocal } from './services/deviceService';
@@ -33,7 +33,6 @@ import { CheckIn, GoingOut } from './pages/parent/CheckIn';
 import { MessageFamily } from './pages/parent/MessageFamily';
 import { ParentPrivacy } from './pages/parent/ParentPrivacy';
 import { ParentMenu } from './pages/parent/ParentMenu';
-import { ParentWaiting } from './pages/parent/ParentWaiting';
 import { NeedHelp } from './pages/parent/NeedHelp';
 import { useAppState, useAuth, useMyId, useNow } from './services/useApp';
 
@@ -45,7 +44,7 @@ function useRole(): Role | null {
   const session = useSession();
   const auth = useAuth();
   if (isLocal && (session.role === 'parent' || session.role === 'station')) return session.role;
-  return auth.status === 'ready' || auth.status === 'pending' ? (auth.role ?? null) : null;
+  return auth.status === 'ready' ? (auth.role ?? null) : null;
 }
 
 function Splash() {
@@ -74,24 +73,11 @@ function CaregiverLayout() {
   const me = useMyId('caregiver');
   if (auth.status === 'loading') return <Splash />;
   if (role !== 'caregiver') return <Navigate to="/" replace />;
-  if (auth.status === 'pending') {
-    return (
-      <main className="screen screen--plain" style={{ paddingTop: 80 }}>
-        <PebbleSays mood="sleepy" size={48}>
-          Waiting for {auth.caregiverName ?? 'the circle owner'} to approve you. Nothing is shared until then.
-        </PebbleSays>
-        <button className="link-btn" style={{ marginTop: 16 }} onClick={() => deviceService.signOut()}>
-          Sign out
-        </button>
-      </main>
-    );
-  }
-  const pending = s.people.some((p) => p.status === 'pending');
   return (
     <>
       <InboxNotifier personId={me} inboxPath="/care/inbox" />
       <Outlet />
-      <TabBar dots={{ Family: pending, Settings: s.notices.some((n) => !n.read && n.kind !== 'join') }} />
+      <TabBar dots={{ Settings: s.notices.some((n) => !n.read && n.kind !== 'join') }} />
     </>
   );
 }
@@ -131,14 +117,15 @@ function ParentLayout() {
   const { parentLinked, lang } = useSession();
   const role = useRole();
   const auth = useAuth();
-  const s = useAppState();
   useParentMoments();
   if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'parent') return <Navigate to="/" replace />;
   if (isLocal && !parentLinked) return <Navigate to="/join" replace />;
-  const parent = s.people.find((p) => p.id === s.parentId);
-  const waiting = isLocal ? parent?.status === 'pending' : auth.status === 'pending';
-  return <div lang={lang}>{waiting ? <ParentWaiting /> : <Outlet />}</div>;
+  return (
+    <div lang={lang}>
+      <Outlet />
+    </div>
+  );
 }
 
 function StationLayout() {
@@ -147,15 +134,6 @@ function StationLayout() {
   const { lang } = useSession();
   if (!isLocal && auth.status === 'loading') return <Splash />;
   if (role !== 'station') return <Navigate to="/" replace />;
-  if (!isLocal && auth.status === 'pending') {
-    return (
-      <div className="station">
-        <PebbleSays mood="sleepy" size={110} align="stack">
-          Waiting for {auth.caregiverName ?? 'your family'} to approve this phone.
-        </PebbleSays>
-      </div>
-    );
-  }
   return (
     <div lang={lang}>
       <StationScreen />

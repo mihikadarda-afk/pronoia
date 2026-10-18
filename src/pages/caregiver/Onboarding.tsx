@@ -47,7 +47,7 @@ export function Onboarding() {
     plan: ['happy', 'Which version are you using? It decides how I know the pill was taken. You can switch any time in Settings.'],
     medicines: ['waving', `Add each medicine with a photo of the real pill. ${parent.name || 'Your parent'} will see that photo at dose time.`],
     checkins: ['happy', `A few times a day I’ll say hi, and ${parent.name || 'your parent'} taps I’m okay. Taken doses count too.${plan === 'free' ? '' : ' If a check-in is missed, I notify you.'}`],
-    phones: ['happy', 'Alerts come as notifications in the app. Turn them on for this phone, and add numbers so you can call each other.'],
+    phones: ['happy', 'Alerts come straight to you as notifications from the app. Turn them on for this phone.'],
     code: ['waving', `Open Pronoia on ${parent.name || 'your parent'}’s phone, tap I have a family code, then I’m the parent, and type this code.`],
     station: ['thinking', `Now the old phone. It films a 12-second video at each dose, and nothing at any other time.`],
     device: ['thinking', 'Now the dispenser. Its code is printed on the bottom. It films each dose with its own camera and uploads the video.'],
@@ -184,17 +184,7 @@ export function Onboarding() {
 
         {step === 'phones' && (
           <>
-            <div style={{ marginBottom: 16 }}>
-              <PhoneNotifications />
-            </div>
-            <label className="field">
-              <span>Your phone number</span>
-              <input className="input" type="tel" value={caregiver.whatsapp} onChange={(e) => deviceService.updatePerson(caregiver.id, { whatsapp: e.target.value })} />
-            </label>
-            <label className="field">
-              <span>{parent.name}’s phone number</span>
-              <input className="input" type="tel" value={parent.whatsapp} onChange={(e) => deviceService.updatePerson(parent.id, { whatsapp: e.target.value })} />
-            </label>
+            <PhoneNotifications />
           </>
         )}
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FamilyCodeCard } from '../../components/FamilyCodeCard';
-import { AppBar, Avatar, ConfirmButton, PlanBadge, Says, SectionHead, Sheet, Status, useToast } from '../../components/ui';
+import { AppBar, Avatar, ConfirmButton, PlanBadge, SectionHead, Sheet, Status, useToast } from '../../components/ui';
 import { relTime } from '../../lib/time';
 import { deviceService } from '../../services/deviceService';
 import { useAppState, useNow } from '../../services/useApp';
@@ -18,43 +18,12 @@ const sees: Record<Person['role'], string> = {
 export function Family() {
   const s = useAppState();
   const now = useNow();
-  const toast = useToast();
   const [editing, setEditing] = useState<Person | null>(null);
-  const pending = s.people.filter((p) => p.status === 'pending');
-  const members = s.people.filter((p) => p.status !== 'pending');
+  const members = s.people;
 
   return (
     <main className="screen">
       <AppBar title="Family" right={<PlanBadge plan={s.plan.tier} />} />
-
-      {pending.length > 0 && (
-        <>
-          <Says mood="waving" size={40}>
-            {pending.length === 1 ? `${pending[0].name} wants to join.` : `${pending.length} people want to join.`} Nothing is shared until you say yes.
-          </Says>
-          <ul className="list" style={{ marginTop: 12 }}>
-            {pending.map((p) => (
-              <li key={p.id} className="attention">
-                <div className="lrow lrow--icon" style={{ cursor: 'default' }}>
-                  <Avatar person={p} />
-                  <span className="grow">
-                    <span className="lrow-title block">{p.name}</span>
-                    <span className="lrow-sub block">Wants to join as {p.role}</span>
-                  </span>
-                  <span className="row" style={{ gap: 8 }}>
-                    <button className="btn btn--secondary btn--small" onClick={() => { deviceService.removePerson(p.id); toast(`Declined ${p.name}`); }}>
-                      Decline
-                    </button>
-                    <button className="btn btn--small" onClick={() => { deviceService.approve(p.id); toast(`${p.name} is in your circle`); }}>
-                      Approve
-                    </button>
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
 
       <SectionHead title="In the circle" />
       <ul className="list">
@@ -64,7 +33,7 @@ export function Family() {
               <Avatar person={p} />
               <span className="grow">
                 <span className="lrow-title block">
-                  {p.name} <span className="muted">· {p.relation}</span>
+                  {p.name} {p.relation && <span className="muted">· {p.relation}</span>}
                 </span>
                 <span className="lrow-sub block">{roleLabel(p)}</span>
               </span>
@@ -92,8 +61,8 @@ export function Family() {
       <SectionHead title="Invite with the family code" />
       <FamilyCodeCard />
       <p className="small muted" style={{ marginTop: 10 }}>
-        One code for everyone. On the other phone, open Pronoia and pick I’m the parent, I’m helping with refills,
-        {s.plan.tier === 'phone' ? ' This is the dose station,' : ''} or I’m family. Codes work once and expire after 24 hours.
+        One code for everyone. On the other phone, open Pronoia, tap I have a family code and pick I’m the parent,
+        {s.plan.tier === 'phone' ? ' This is the dose station,' : ''} or I’m family. They’re in right away. Codes work once and expire after 24 hours.
       </p>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)} label="Edit person" title={editing && <h2 style={{ fontSize: 18 }}>{editing.name}</h2>}>
@@ -105,7 +74,7 @@ export function Family() {
 
 function PersonEditor({ person, onDone }: { person: Person; onDone: () => void }) {
   const toast = useToast();
-  const [d, setD] = useState({ name: person.name, relation: person.relation, whatsapp: person.whatsapp, city: person.city });
+  const [d, setD] = useState({ name: person.name, relation: person.relation, city: person.city });
   const field = (k: keyof typeof d, label: string, type = 'text') => (
     <label className="field">
       <span>{label}</span>
@@ -123,7 +92,6 @@ function PersonEditor({ person, onDone }: { person: Person; onDone: () => void }
       <p className="small muted">{sees[person.role]}</p>
       {field('name', 'Name')}
       {field('relation', 'Relation')}
-      {field('whatsapp', 'Phone number', 'tel')}
       {field('city', 'City')}
       <button className="btn btn--block" disabled={!d.name.trim()}>
         Save

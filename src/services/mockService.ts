@@ -622,9 +622,9 @@ export class MockDeviceService extends BaseService implements DeviceService {
       personId = 'station';
       next.station = { ...this.state.station, linked: true, online: true, lastSeen: t };
     } else if (role === 'parent' && this.person(this.state.parentId)) {
-      // A new phone for the parent: re-link it, pending approval.
+      // The parent's phone: linked right away, the family code is enough.
       personId = this.state.parentId;
-      people = people.map((p) => (p.id === personId ? { ...p, status: 'pending' } : p));
+      people = people.map((p) => (p.id === personId ? { ...p, status: 'active', joinedAt: t } : p));
     } else {
       personId = `p-${Math.random().toString(36).slice(2, 8)}`;
       people = [
@@ -637,8 +637,9 @@ export class MockDeviceService extends BaseService implements DeviceService {
           whatsapp: '',
           city: '',
           timeZone: this.person(this.state.caregiverId)?.timeZone ?? this.parentTz(),
-          status: 'pending',
+          status: 'active',
           appAccess: true,
+          joinedAt: t,
         },
       ];
     }
@@ -648,17 +649,9 @@ export class MockDeviceService extends BaseService implements DeviceService {
       ...next,
       people,
       code: { ...this.state.code, used: true },
-      notices: this.notice('join', role === 'station' ? `The dose station joined ${this.parentName()}'s circle.` : `${who} joined your circle${roleText}. Approve to start sharing.`),
+      notices: this.notice('join', role === 'station' ? `The dose station joined ${this.parentName()}'s circle.` : `${who} joined your circle${roleText}.`),
     });
     return { ok: true, personId };
-  }
-
-  approve(personId: string) {
-    const t = this.t();
-    this.set({
-      people: this.state.people.map((p) => (p.id === personId ? { ...p, status: 'active', joinedAt: t } : p)),
-      notices: this.state.notices.map((n) => (n.kind === 'join' ? { ...n, read: true } : n)),
-    });
   }
 
   removePerson(personId: string) {
@@ -772,7 +765,7 @@ export class MockDeviceService extends BaseService implements DeviceService {
     const helpers = this.state.people.filter((p) => p.status === 'active' && p.role === 'caregiver');
     const t = this.t();
     const time = wallTime(this.now(), this.parentTz());
-    const helpText = `🆘 ${name} pressed I need help at ${hhmmLabel(time)}. Call ${this.person(this.state.parentId)?.whatsapp ?? ''}.`;
+    const helpText = `🆘 ${name} pressed I need help at ${hhmmLabel(time)}. Please call now.`;
     this.set({ outbox: [...helpers.map((p, i) => this.message(p.id, helpText, { kind: 'help', wake: true }, i)), ...this.state.outbox].slice(0, 80) });
     const due = this.currentCheckIn();
     const id = `0:${due?.time ?? time}`;

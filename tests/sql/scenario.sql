@@ -16,16 +16,16 @@ reset role;
 -- The family was set up yesterday, so today's earlier doses and check-ins count
 update circles set created_at = now() - interval '1 day';
 
--- Parent, then the dose station join with codes; Mihika approves each. Refill helpers can't join.
+-- Parent, then the dose station join with codes, active right away. Refill helpers can't join.
 select pg_temp.as_user(2); set role authenticated;
 select join_with_code(:'code', 'parent', '') as parent_id \gset
 reset role; select pg_temp.as_user(1); set role authenticated;
-select approve_member(:'parent_id');
+do $$ begin assert (select status from members where role = 'parent') = 'active', 'parent is in right away'; end $$;
 select regenerate_code(:'cid') as code2 \gset
 reset role; select pg_temp.as_user(3); set role authenticated;
 select join_with_code(:'code2', 'station', '') as station_id \gset
 reset role; select pg_temp.as_user(1); set role authenticated;
-select approve_member(:'station_id');
+do $$ begin assert (select status from members where role = 'station') = 'active', 'station is in right away'; end $$;
 select regenerate_code(:'cid') as code3 \gset
 reset role; select pg_temp.as_user(4); set role authenticated;
 do $$ begin
@@ -122,7 +122,7 @@ do $$ begin assert (select status from dose_records where time = pg_temp.ago(40)
 
 -- Help from the station alerts everyone
 select pg_temp.as_user(3); set role authenticated; select parent_help(); reset role;
-do $$ begin assert (select count(*) from outbox where to_name = 'Mihika' and text like '🆘 Nanaji pressed I need help%') = 1; end $$;
+do $$ begin assert (select count(*) from outbox where to_name = 'Mihika' and text like '🆘 Nanaji pressed I need help at % Please call now.') = 1; end $$;
 -- Device plan: the dispenser's clip comes back through the server with its code and secret
 update circles set plan = '{"tier":"device"}';
 select provision_device('PRN-TEST-01', 'sekret');

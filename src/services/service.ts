@@ -35,14 +35,13 @@ export const UNMARKED_AFTER_MIN = 30;
 /** How long a dose stays on the parent's (or station's) screen. */
 export const DOSE_WINDOW_MIN = 90;
 
-export type AuthStatus = 'loading' | 'signed-out' | 'no-circle' | 'pending' | 'ready';
+export type AuthStatus = 'loading' | 'signed-out' | 'no-circle' | 'ready';
 
 export interface AuthState {
   status: AuthStatus;
   role?: Role;
   email?: string;
   isAnonymous?: boolean;
-  caregiverName?: string;
   /** Live: the signed-in person's member id (for their inbox). */
   memberId?: string;
   /** Opened from a reset-password email. */
@@ -127,7 +126,6 @@ export interface DeviceService {
   regenerateCode(): void;
   checkCode(code: string): Promise<{ ok: true; caregiver: Person } | { ok: false; reason: string }>;
   joinWithCode(code: string, role: Role, name: string): Promise<{ ok: boolean; reason?: string; personId?: string }>;
-  approve(personId: string): void;
   removePerson(personId: string): void;
   updatePerson(personId: string, patch: Partial<Person>): void;
   setCircleName(name: string): void;

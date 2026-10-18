@@ -203,13 +203,6 @@ export function CheckInSheet({ id, onClose }: { id: string | null; onClose: () =
       )}
       <Events events={c.record?.events ?? []} start={c.scheduledAt} tz={tz} />
 
-      {c.status === 'missed_notified' && (
-        <div className="stack" style={{ marginTop: 14 }}>
-          {parent.whatsapp && <p className="small strong" style={{ margin: 0 }}>Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></p>}
-        </div>
-      )}
-      {c.status === 'help' && parent.whatsapp && <p className="small strong">Call {parent.name}: <a className="num" href={`tel:${parent.whatsapp.replace(/\s/g, '')}`}>{parent.whatsapp}</a></p>}
-
       {c.status === 'checked_in' && !voice && (
         <div className="btn-row" style={{ marginTop: 14 }}>
           <button

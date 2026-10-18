@@ -29,7 +29,7 @@ export const EVENTS: EventInfo[] = [
   { id: 'offline', short: 'the station going offline', group: 'Pills and station', title: 'Dose station or dispenser offline', hint: 'No connection for more than an hour, or a low battery.', canWake: false },
   { id: 'photo', short: 'photos from your parent', group: 'Family', title: 'A photo arrived', hint: 'Smile time: your parent sent a photo.', canWake: false },
   { id: 'parentMessage', short: 'messages from your parent', group: 'Family', title: 'Messages from your parent', hint: 'I’m okay and Call me.', canWake: true },
-  { id: 'joinRequest', short: 'join requests', group: 'Family', title: 'Someone asks to join', hint: 'Waiting for your approval.', canWake: false },
+  { id: 'joinRequest', short: 'new family members', group: 'Family', title: 'Someone joins', hint: 'When a phone joins with the family code.', canWake: false },
   { id: 'dailyDigest', short: 'the morning digest', group: 'Summaries', title: 'Morning digest', hint: 'Yesterday’s doses in one notification.', canWake: false },
   { id: 'weeklySummary', short: 'the weekly summary', group: 'Summaries', title: 'Weekly summary', hint: 'Every Sunday: the week at a glance.', canWake: false },
 ];
