@@ -8,7 +8,7 @@ import { fmtDay, fmtTime, hhmmLabel } from '../lib/time';
 import { AiCheckUnavailable, checkDose } from '../services/aiCheck';
 import { deviceService } from '../services/deviceService';
 import { useAppState, useNow, usePeople } from '../services/useApp';
-import type { Dose, DoseCheckResult } from '../services/types';
+import type { Dose, DoseCheckResult, Medicine } from '../services/types';
 
 /** How long the station films at dose time. */
 const RECORD_MS = 12_000;
@@ -95,7 +95,21 @@ async function film(stream: MediaStream, video: HTMLVideoElement): Promise<{ vid
   return { video: await toDataUrl(new Blob(chunks, { type: type.split(';')[0] })) };
 }
 
-function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCamera: (s: 'ready' | 'blocked' | 'error') => void; onFinished: () => void }) {
+/**
+ * A dose moment: chime, film 12 seconds, ask the AI. In `test` mode it does everything except
+ * save the result or tell anyone, so the family can check that the camera and the AI work.
+ */
+function DoseMoment({
+  dose: initial,
+  test = false,
+  onCamera,
+  onFinished,
+}: {
+  dose: Dose;
+  test?: boolean;
+  onCamera: (s: 'ready' | 'blocked' | 'error') => void;
+  onFinished: () => void;
+}) {
   const t = useT();
   const { caregiver } = usePeople();
   // The dose as it was when the moment started; its status changes once it's recorded.
@@ -110,11 +124,12 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
 
   const finish = useCallback(
     (result: DoseCheckResult, media: string[]) => {
+      if (test) return setPhase({ kind: 'done', result });
       deviceService.recordDoseCheck(dose.id, result, media);
       if (result.status === 'not_taken' && tries.current < MAX_TRIES) setPhase({ kind: 'retry', tries: tries.current });
       else setPhase({ kind: 'done', result });
     },
-    [dose.id],
+    [dose.id, test],
   );
 
   const run = useCallback(async () => {
@@ -155,19 +170,35 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
   }, [run]);
 
   useEffect(() => {
-    if (phase.kind !== 'retry' && !(phase.kind === 'problem' && tries.current < MAX_TRIES)) return;
+    if (test || (phase.kind !== 'retry' && !(phase.kind === 'problem' && tries.current < MAX_TRIES))) return;
     const id = setTimeout(() => {
       chime(true);
       run();
     }, RETRY_MS);
     return () => clearTimeout(id);
-  }, [phase, run]);
+  }, [phase, run, test]);
 
   useEffect(() => {
-    if (phase.kind !== 'done') return;
+    if (test || phase.kind !== 'done') return;
     const id = setTimeout(onFinished, 20_000);
     return () => clearTimeout(id);
-  }, [phase, onFinished]);
+  }, [phase, onFinished, test]);
+
+  if (phase.kind === 'done' && test) {
+    const r = phase.result;
+    return (
+      <div className="station station--dose">
+        <PebbleSays mood={r.status === 'taken' ? 'celebrating' : 'thinking'} size={130} align="stack">
+          Test result: {r.status === 'taken' ? 'taken' : r.status === 'unsure' ? 'not sure' : 'not taken'}, {r.confidence}% sure.
+        </PebbleSays>
+        <div className="station-sub" style={{ maxWidth: 420 }}>{r.reason}</div>
+        <div className="station-sub" style={{ marginTop: 12, fontSize: 16 }}>Just a test: nothing was saved and nobody was told.</div>
+        <button className="btn" style={{ marginTop: 22 }} onClick={onFinished}>
+          Done
+        </button>
+      </div>
+    );
+  }
 
   if (phase.kind === 'done') {
     const ok = phase.result.status !== 'not_taken';
@@ -201,7 +232,7 @@ function DoseMoment({ dose: initial, onCamera, onFinished }: { dose: Dose; onCam
           : phase.kind === 'retry'
             ? 'I’ll look again in a minute.'
             : phase.kind === 'problem'
-              ? `${phase.reason} ${tries.current < MAX_TRIES ? 'I’ll try again in a minute.' : ''}`
+              ? `${phase.reason} ${!test && tries.current < MAX_TRIES ? 'I’ll try again in a minute.' : ''}`
               : t.cameraChecking}
       </div>
       {phase.kind === 'problem' && (
@@ -222,6 +253,7 @@ export function StationScreen() {
   const [camera, setCamera] = useState<'ready' | 'blocked' | 'error'>('ready');
   const [checkedIn, setCheckedIn] = useState<string | null>(null);
   const [active, setActive] = useState<Dose | null>(null);
+  const [testing, setTesting] = useState<Dose | null>(null);
   const handled = useRef(new Set<string>());
   useWakeLock();
   useHeartbeat(camera);
@@ -258,6 +290,15 @@ export function StationScreen() {
   }
 
   if (active) return <DoseMoment key={active.id} dose={active} onCamera={setCamera} onFinished={finished} />;
+  if (testing) return <DoseMoment key={testing.id} dose={testing} test onCamera={setCamera} onFinished={() => setTesting(null)} />;
+
+  // A practice run with the first medicine, or a plain pill if none is added yet.
+  const startTest = () => {
+    const medicine: Medicine = s.medicines[0] ?? {
+      slot: 1, name: 'Test pill', purpose: '', strength: '', nickname: 'test pill', times: [], pillsLeft: 0, capacity: 0, color: '#F7F4EC', shape: 'round',
+    };
+    setTesting({ id: 'test', dayOffset: 0, slot: medicine.slot, time: '', scheduledAt: now, medicine, status: 'due' });
+  };
 
   if (check && !s.pause && checkedIn !== check.id) {
     return (
@@ -296,6 +337,9 @@ export function StationScreen() {
         </div>
       )}
       <div className="station-status">{camera === 'blocked' ? 'Camera permission needed for dose checks' : 'Camera off · turns on only at dose time'}</div>
+      <button className="btn btn--secondary" style={{ marginTop: 22 }} onClick={startTest}>
+        Test the camera and AI check
+      </button>
     </div>
   );
 }
