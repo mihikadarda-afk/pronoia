@@ -99,7 +99,7 @@ async function film(stream: MediaStream, video: HTMLVideoElement): Promise<{ vid
  * A dose moment: chime, film 12 seconds, ask the AI. In `test` mode it does everything except
  * save the result or tell anyone, so the family can check that the camera and the AI work.
  */
-function DoseMoment({
+export function DoseMoment({
   dose: initial,
   test = false,
   onCamera,
