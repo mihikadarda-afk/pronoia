@@ -6,6 +6,7 @@ import { useT } from '../../lib/i18n';
 import { hhmmLabel } from '../../lib/time';
 import { deviceService, isDoneDose } from '../../services/deviceService';
 import { useAppState, usePeople } from '../../services/useApp';
+import { DoseMoment } from '../Station';
 
 export function PillTime() {
   const s = useAppState();
@@ -34,6 +35,11 @@ export function PillTime() {
   }
 
   const nick = dose.medicine.nickname || t.purpose(dose.medicine.purpose);
+
+  // Phone plan with no separate dose station set up: this phone does the filming and the AI check itself.
+  if (plan === 'phone' && !s.station.linked && dose.status === 'due') {
+    return <DoseMoment key={dose.id} dose={dose} onCamera={() => {}} onFinished={() => nav('/parent')} />;
+  }
 
   if (done) {
     return (
