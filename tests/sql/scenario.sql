@@ -85,6 +85,24 @@ do $$ declare n int; begin
   assert n >= 1, 'caregiver should get the ⚠️ message';
 end $$;
 
+-- With a station joined, the parent's phone can't report; once the station is gone, it can
+select pg_temp.as_user(2); set role authenticated;
+do $$ begin
+  begin
+    perform station_dose_result(1, pg_temp.ago(5), 'taken', 90);
+    raise exception 'parent reported while a station exists';
+  exception when raise_exception then
+    if sqlerrm <> 'Only the dose station reports dose results.' then raise; end if;
+  end;
+end $$;
+reset role;
+update members set status = 'pending' where role = 'station';
+select pg_temp.as_user(2); set role authenticated;
+select station_dose_result(1, pg_temp.ago(5), 'taken', 90, 'Taken with water');
+reset role;
+update members set status = 'active' where role = 'station';
+do $$ begin assert (select status from dose_records where time = pg_temp.ago(5)) = 'taken', 'parent phone reported the dose'; end $$;
+
 -- Mihika reviews: frames deleted
 select pg_temp.as_user(1); set role authenticated;
 select id as rec from dose_records where time = pg_temp.ago(40) \gset
